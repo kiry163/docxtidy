@@ -101,9 +101,23 @@ if err := docxtidy.Write(ctx, updated, output); err != nil {
 }
 ```
 
-`Layout` 不包含业务角色语义。库只关心 block id 的新顺序和明确的文本替换；所有块必须且只能出现一次，遗漏或重复都会报错。
+`Layout` 不包含业务角色语义。库只关心 block id 的新顺序和明确编辑；所有块必须且只能出现一次，遗漏或重复都会报错。
 
-如果调用方希望完全手写章节编号，可以设置 `Layout.Numbering = docxtidy.NumberingManual`。该模式会移除段落中的 DOCX 自动编号属性，库不会计算或补写编号文本；调用方需要通过 `Layout.Edits` 自己写入最终编号。默认行为是保留原 DOCX 自动编号。
+默认行为会保留原 DOCX 自动编号。如果调用方希望把某个自动编号段落改成手写编号，使用 `ManualNumberingEdit`，并传入最终完整文本：
+
+```go
+layout.Edits = []docxtidy.Edit{
+	{
+		BlockID: "block-0040",
+		ManualNumbering: &docxtidy.ManualNumberingEdit{
+			Text:  "3.4 支撑保障：信息化平台、校企协同机制",
+			Style: docxtidy.ManualNumberingStyleHeading,
+		},
+	},
+}
+```
+
+该编辑会重建目标段落：移除 DOCX 自动编号属性、移除原段落样式引用和缩进，并写入调用方提供的手写编号文本。`Style` 使用库定义的稳定语义，目前支持 `plain` 和 `heading`，不会要求调用方依赖不同文档中不稳定的 `pStyle` ID。
 
 ## CLI
 

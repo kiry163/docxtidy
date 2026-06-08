@@ -48,28 +48,33 @@ type OutlineBlock struct {
 }
 
 type Layout struct {
-	Groups    []Group         `json:"groups"`
-	Edits     []Edit          `json:"edits,omitempty"`
-	Numbering NumberingPolicy `json:"numbering,omitempty"`
+	Groups []Group `json:"groups"`
+	Edits  []Edit  `json:"edits,omitempty"`
 }
-
-type NumberingPolicy string
-
-const (
-	NumberingPreserve NumberingPolicy = "preserve"
-	NumberingManual   NumberingPolicy = "manual"
-)
 
 type Group struct {
 	BlockIDs []string `json:"block_ids"`
 }
 
 type Edit struct {
-	BlockID string           `json:"block_id"`
-	Replace *TextReplacement `json:"replace,omitempty"`
+	BlockID         string               `json:"block_id"`
+	Replace         *TextReplacement     `json:"replace,omitempty"`
+	ManualNumbering *ManualNumberingEdit `json:"manual_numbering,omitempty"`
 }
 
 type TextReplacement struct {
 	Old string `json:"old"`
 	New string `json:"new"`
 }
+
+type ManualNumberingEdit struct {
+	Text  string               `json:"text"`
+	Style ManualNumberingStyle `json:"style,omitempty"`
+}
+
+type ManualNumberingStyle string
+
+const (
+	ManualNumberingStylePlain   ManualNumberingStyle = "plain"
+	ManualNumberingStyleHeading ManualNumberingStyle = "heading"
+)

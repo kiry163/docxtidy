@@ -203,17 +203,39 @@ func computeNumberingLabel(levelText string, counters []int) string {
 	return label
 }
 
-func RemoveParagraphNumbering(blockXML string) string {
-	start := strings.Index(blockXML, "<w:numPr>")
-	if start == -1 {
-		return blockXML
+func RebuildManualNumberingParagraphXML(blockXML string, text string, style string) (string, error) {
+	startTagEnd := strings.Index(blockXML, ">")
+	if startTagEnd == -1 || !strings.HasPrefix(blockXML, "<w:p") {
+		return "", fmt.Errorf("manual numbering edit requires paragraph XML")
 	}
-	end := strings.Index(blockXML[start:], "</w:numPr>")
-	if end == -1 {
-		return blockXML
+
+	startTag := blockXML[:startTagEnd+1]
+	return startTag + manualNumberingParagraphProperties(style) + manualNumberingRunXML(text, style) + "</w:p>", nil
+}
+
+func manualNumberingParagraphProperties(style string) string {
+	switch style {
+	case "heading":
+		return `<w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr>`
+	default:
+		return `<w:pPr/>`
 	}
-	end += start + len("</w:numPr>")
-	return blockXML[:start] + blockXML[end:]
+}
+
+func manualNumberingRunXML(text string, style string) string {
+	rPr := ""
+	if style == "heading" {
+		rPr = `<w:rPr><w:b/></w:rPr>`
+	}
+	return `<w:r>` + rPr + manualNumberingTextXML(text) + `</w:r>`
+}
+
+func manualNumberingTextXML(text string) string {
+	space := ""
+	if strings.TrimSpace(text) != text {
+		space = ` xml:space="preserve"`
+	}
+	return `<w:t` + space + `>` + escapeXMLText(text) + `</w:t>`
 }
 
 func attrValue(element xml.StartElement, local string) string {

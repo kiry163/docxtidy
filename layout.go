@@ -32,14 +32,8 @@ func Apply(ctx context.Context, snapshot Snapshot, layout Layout) (Snapshot, err
 	}
 
 	for _, edit := range layout.Edits {
-		if err := applyBlockTextEdit(blockByID, edit); err != nil {
+		if err := applyBlockEdit(blockByID, edit); err != nil {
 			return Snapshot{}, err
-		}
-	}
-	if layout.Numbering == NumberingManual {
-		for blockID, block := range blockByID {
-			block.XML = ooxml.RemoveParagraphNumbering(block.XML)
-			blockByID[blockID] = block
 		}
 	}
 
@@ -94,12 +88,6 @@ func validateLayout(layout Layout, blockByID map[string]SnapshotBlock) error {
 	if len(layout.Groups) == 0 {
 		return fmt.Errorf("layout has no groups")
 	}
-	switch layout.Numbering {
-	case "", NumberingPreserve, NumberingManual:
-	default:
-		return fmt.Errorf("unknown numbering policy %q", layout.Numbering)
-	}
-
 	seenBlockIDs := map[string]bool{}
 	for groupIndex, group := range layout.Groups {
 		if len(group.BlockIDs) == 0 {
@@ -136,14 +124,44 @@ func validateLayout(layout Layout, blockByID map[string]SnapshotBlock) error {
 		if block.Protected {
 			return fmt.Errorf("cannot edit protected block %s", edit.BlockID)
 		}
-		if edit.Replace == nil {
+		actionCount := 0
+		if edit.Replace != nil {
+			actionCount++
+		}
+		if edit.ManualNumbering != nil {
+			actionCount++
+		}
+		if actionCount == 0 {
 			return fmt.Errorf("edit for block %s has missing replacement", edit.BlockID)
 		}
-		if edit.Replace.Old == "" {
+		if actionCount > 1 {
+			return fmt.Errorf("edit for block %s has multiple edit actions", edit.BlockID)
+		}
+		if edit.Replace != nil && edit.Replace.Old == "" {
 			return fmt.Errorf("edit for block %s has empty old text", edit.BlockID)
+		}
+		if edit.ManualNumbering != nil {
+			if block.Type != BlockTypeParagraph {
+				return fmt.Errorf("manual numbering edit for block %s requires paragraph block", edit.BlockID)
+			}
+			if edit.ManualNumbering.Text == "" {
+				return fmt.Errorf("edit for block %s has empty manual numbering text", edit.BlockID)
+			}
+			switch edit.ManualNumbering.Style {
+			case "", ManualNumberingStylePlain, ManualNumberingStyleHeading:
+			default:
+				return fmt.Errorf("edit for block %s has unknown manual numbering style %q", edit.BlockID, edit.ManualNumbering.Style)
+			}
 		}
 	}
 	return nil
+}
+
+func applyBlockEdit(blockByID map[string]SnapshotBlock, edit Edit) error {
+	if edit.Replace != nil {
+		return applyBlockTextEdit(blockByID, edit)
+	}
+	return applyManualNumberingEdit(blockByID, edit)
 }
 
 func applyBlockTextEdit(blockByID map[string]SnapshotBlock, edit Edit) error {
@@ -160,6 +178,20 @@ func applyBlockTextEdit(blockByID map[string]SnapshotBlock, edit Edit) error {
 	if block.DisplayText != "" {
 		block.DisplayText = strings.Replace(block.DisplayText, edit.Replace.Old, edit.Replace.New, 1)
 	}
+	blockByID[edit.BlockID] = block
+	return nil
+}
+
+func applyManualNumberingEdit(blockByID map[string]SnapshotBlock, edit Edit) error {
+	block := blockByID[edit.BlockID]
+	style := string(edit.ManualNumbering.Style)
+	updatedXML, err := ooxml.RebuildManualNumberingParagraphXML(block.XML, edit.ManualNumbering.Text, style)
+	if err != nil {
+		return fmt.Errorf("rebuild manual numbering paragraph %s: %w", edit.BlockID, err)
+	}
+	block.XML = updatedXML
+	block.Text = ooxml.BlockText(updatedXML)
+	block.DisplayText = block.Text
 	blockByID[edit.BlockID] = block
 	return nil
 }

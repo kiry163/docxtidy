@@ -209,15 +209,20 @@ func TestApplyPreservesAutomaticNumberingByDefault(t *testing.T) {
 	}
 }
 
-func TestApplyManualNumberingRemovesAutomaticNumbering(t *testing.T) {
+func TestApplyManualNumberingEditRebuildsNumberedParagraph(t *testing.T) {
 	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	layout := completeLayoutFromSnapshot(snapshot)
-	layout.Numbering = NumberingManual
 	layout.Edits = []Edit{
-		{BlockID: "block-0016", Replace: &TextReplacement{Old: "编号段落", New: "1.2 编号段落"}},
+		{
+			BlockID: "block-0016",
+			ManualNumbering: &ManualNumberingEdit{
+				Text:  "1.2 编号段落",
+				Style: ManualNumberingStyleHeading,
+			},
+		},
 	}
 
 	updated, err := Apply(context.Background(), snapshot, layout)
@@ -229,21 +234,49 @@ func TestApplyManualNumberingRemovesAutomaticNumbering(t *testing.T) {
 	if strings.Contains(block.XML, "<w:numPr>") {
 		t.Fatalf("block xml = %s, want automatic numbering removed", block.XML)
 	}
+	if strings.Contains(block.XML, "<w:pStyle") {
+		t.Fatalf("block xml = %s, want paragraph style removed", block.XML)
+	}
+	if strings.Contains(block.XML, "<w:ind") {
+		t.Fatalf("block xml = %s, want paragraph indentation removed", block.XML)
+	}
 	if block.Text != "1.2 编号段落" {
 		t.Fatalf("block text = %q, want manual numbering text", block.Text)
 	}
+	if !strings.Contains(block.XML, `<w:b/>`) {
+		t.Fatalf("block xml = %s, want heading styling", block.XML)
+	}
 }
 
-func TestApplyRejectsUnknownNumberingPolicy(t *testing.T) {
+func TestApplyRejectsEditWithReplaceAndManualNumbering(t *testing.T) {
 	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 	layout := completeLayoutFromSnapshot(snapshot)
-	layout.Numbering = NumberingPolicy("surprise")
+	layout.Edits = []Edit{
+		{
+			BlockID:         "block-0016",
+			Replace:         &TextReplacement{Old: "编号段落", New: "1.2 编号段落"},
+			ManualNumbering: &ManualNumberingEdit{Text: "1.2 编号段落"},
+		},
+	}
 
-	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "unknown numbering policy") {
-		t.Fatalf("Apply error = %v, want unknown numbering policy error", err)
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "multiple edit actions") {
+		t.Fatalf("Apply error = %v, want multiple edit actions error", err)
+	}
+}
+
+func TestApplyRejectsManualNumberingEditWithoutText(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Edits = []Edit{{BlockID: "block-0016", ManualNumbering: &ManualNumberingEdit{}}}
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "empty manual numbering text") {
+		t.Fatalf("Apply error = %v, want empty manual numbering text error", err)
 	}
 }
 
@@ -517,7 +550,7 @@ func paragraphXML(text string) string {
 }
 
 func numberedParagraphXML(text string, numID string, level int) string {
-	return `<w:p><w:pPr><w:numPr><w:ilvl w:val="` + strconv.Itoa(level) + `"/><w:numId w:val="` + numID + `"/></w:numPr></w:pPr><w:r><w:t>` + escapeFixtureText(text) + `</w:t></w:r></w:p>`
+	return `<w:p><w:pPr><w:pStyle w:val="5"/><w:numPr><w:ilvl w:val="` + strconv.Itoa(level) + `"/><w:numId w:val="` + numID + `"/></w:numPr><w:ind w:left="370" w:hanging="370"/></w:pPr><w:r><w:t>` + escapeFixtureText(text) + `</w:t></w:r></w:p>`
 }
 
 func tableXML() string {
