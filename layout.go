@@ -36,6 +36,12 @@ func Apply(ctx context.Context, snapshot Snapshot, layout Layout) (Snapshot, err
 			return Snapshot{}, err
 		}
 	}
+	if layout.Numbering == NumberingManual {
+		for blockID, block := range blockByID {
+			block.XML = ooxml.RemoveParagraphNumbering(block.XML)
+			blockByID[blockID] = block
+		}
+	}
 
 	rebuiltBlocks := make([]SnapshotBlock, 0, len(snapshot.Document.Blocks))
 	for _, group := range layout.Groups {
@@ -87,6 +93,11 @@ func blockMap(blocks []SnapshotBlock) (map[string]SnapshotBlock, error) {
 func validateLayout(layout Layout, blockByID map[string]SnapshotBlock) error {
 	if len(layout.Groups) == 0 {
 		return fmt.Errorf("layout has no groups")
+	}
+	switch layout.Numbering {
+	case "", NumberingPreserve, NumberingManual:
+	default:
+		return fmt.Errorf("unknown numbering policy %q", layout.Numbering)
 	}
 
 	seenBlockIDs := map[string]bool{}

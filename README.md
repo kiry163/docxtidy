@@ -103,6 +103,8 @@ if err := docxtidy.Write(ctx, updated, output); err != nil {
 
 `Layout` 不包含业务角色语义。库只关心 block id 的新顺序和明确的文本替换；所有块必须且只能出现一次，遗漏或重复都会报错。
 
+如果调用方希望完全手写章节编号，可以设置 `Layout.Numbering = docxtidy.NumberingManual`。该模式会移除段落中的 DOCX 自动编号属性，库不会计算或补写编号文本；调用方需要通过 `Layout.Edits` 自己写入最终编号。默认行为是保留原 DOCX 自动编号。
+
 ## CLI
 
 CLI 用于本地调试和示例：

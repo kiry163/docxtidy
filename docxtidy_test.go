@@ -191,6 +191,62 @@ func TestApplyRejectsMissingOldText(t *testing.T) {
 	}
 }
 
+func TestApplyPreservesAutomaticNumberingByDefault(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+
+	updated, err := Apply(context.Background(), snapshot, layout)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, updated, "block-0016")
+	if !strings.Contains(block.XML, "<w:numPr>") {
+		t.Fatalf("block xml = %s, want automatic numbering preserved", block.XML)
+	}
+}
+
+func TestApplyManualNumberingRemovesAutomaticNumbering(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Numbering = NumberingManual
+	layout.Edits = []Edit{
+		{BlockID: "block-0016", Replace: &TextReplacement{Old: "编号段落", New: "1.2 编号段落"}},
+	}
+
+	updated, err := Apply(context.Background(), snapshot, layout)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, updated, "block-0016")
+	if strings.Contains(block.XML, "<w:numPr>") {
+		t.Fatalf("block xml = %s, want automatic numbering removed", block.XML)
+	}
+	if block.Text != "1.2 编号段落" {
+		t.Fatalf("block text = %q, want manual numbering text", block.Text)
+	}
+}
+
+func TestApplyRejectsUnknownNumberingPolicy(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Numbering = NumberingPolicy("surprise")
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "unknown numbering policy") {
+		t.Fatalf("Apply error = %v, want unknown numbering policy error", err)
+	}
+}
+
 func TestExtractAddsAutomaticNumberingToDisplayText(t *testing.T) {
 	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {

@@ -203,6 +203,19 @@ func computeNumberingLabel(levelText string, counters []int) string {
 	return label
 }
 
+func RemoveParagraphNumbering(blockXML string) string {
+	start := strings.Index(blockXML, "<w:numPr>")
+	if start == -1 {
+		return blockXML
+	}
+	end := strings.Index(blockXML[start:], "</w:numPr>")
+	if end == -1 {
+		return blockXML
+	}
+	end += start + len("</w:numPr>")
+	return blockXML[:start] + blockXML[end:]
+}
+
 func attrValue(element xml.StartElement, local string) string {
 	for _, attr := range element.Attr {
 		if attr.Name.Local == local {
