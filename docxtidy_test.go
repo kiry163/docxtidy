@@ -9,40 +9,40 @@ import (
 	"testing"
 )
 
-func TestExtractReturnsStateFromReader(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestExtractReturnsSnapshotFromReader(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	if state.Document.ID != "sample" {
-		t.Fatalf("document id = %q, want sample", state.Document.ID)
+	if snapshot.Document.ID != "sample" {
+		t.Fatalf("document id = %q, want sample", snapshot.Document.ID)
 	}
-	if len(state.Files) == 0 {
-		t.Fatal("state has no package files")
+	if len(snapshot.Package.Parts) == 0 {
+		t.Fatal("snapshot has no package parts")
 	}
-	if len(state.Document.Blocks) == 0 {
-		t.Fatal("state has no document blocks")
+	if len(snapshot.Document.Blocks) == 0 {
+		t.Fatal("snapshot has no document blocks")
 	}
-	if state.Document.Blocks[0].ID == "" {
+	if snapshot.Document.Blocks[0].ID == "" {
 		t.Fatal("first block ID is empty")
 	}
-	if state.Document.Blocks[0].XML == "" {
+	if snapshot.Document.Blocks[0].XML == "" {
 		t.Fatal("first block XML is empty")
 	}
-	if !stateHasPackageFile(state, "word/document.xml") {
-		t.Fatal("state is missing word/document.xml")
+	if !snapshotHasPackagePart(snapshot, "word/document.xml") {
+		t.Fatal("snapshot is missing word/document.xml")
 	}
 }
 
-func TestWriteRoundTripsExtractedState(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestWriteRoundTripsExtractedSnapshot(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
 	var output bytes.Buffer
-	if err := Write(context.Background(), state, &output); err != nil {
+	if err := Write(context.Background(), snapshot, &output); err != nil {
 		t.Fatalf("Write returned error: %v", err)
 	}
 
@@ -63,15 +63,15 @@ func TestWriteRoundTripsExtractedState(t *testing.T) {
 	}
 }
 
-func TestApplyReturnsNewStateAndPreservesInput(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestApplyReturnsNewSnapshotFromLayoutAndPreservesInput(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	originalFirstID := state.Document.Blocks[0].ID
-	originalAbstractText := state.Document.Blocks[9].Text
+	originalFirstID := snapshot.Document.Blocks[0].ID
+	originalAbstractText := snapshot.Document.Blocks[9].Text
 
-	updated, err := Apply(context.Background(), state, standardTestStructure(), standardTestTransform())
+	updated, err := Apply(context.Background(), snapshot, standardTestLayout())
 	if err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
@@ -95,41 +95,138 @@ func TestApplyReturnsNewStateAndPreservesInput(t *testing.T) {
 	if !strings.HasPrefix(updated.Document.Blocks[5].Text, "【关键词：】") {
 		t.Fatalf("keywords text = %q, want standardized prefix", updated.Document.Blocks[5].Text)
 	}
-	if state.Document.Blocks[0].ID != originalFirstID {
-		t.Fatalf("original first block changed to %q, want %q", state.Document.Blocks[0].ID, originalFirstID)
+	if snapshot.Document.Blocks[0].ID != originalFirstID {
+		t.Fatalf("original first block changed to %q, want %q", snapshot.Document.Blocks[0].ID, originalFirstID)
 	}
-	if state.Document.Blocks[9].Text != originalAbstractText {
-		t.Fatalf("original abstract text changed to %q, want %q", state.Document.Blocks[9].Text, originalAbstractText)
+	if snapshot.Document.Blocks[9].Text != originalAbstractText {
+		t.Fatalf("original abstract text changed to %q, want %q", snapshot.Document.Blocks[9].Text, originalAbstractText)
 	}
 }
 
-func TestExtractCapturesAutomaticNumberingMetadata(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestApplyRejectsMissingBlockInLayout(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Groups[0].BlockIDs = layout.Groups[0].BlockIDs[1:]
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "missing block") {
+		t.Fatalf("Apply error = %v, want missing block error", err)
+	}
+}
+
+func TestApplyRejectsDuplicateBlockInLayout(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Groups[0].BlockIDs[0] = layout.Groups[0].BlockIDs[1]
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "appears more than once") {
+		t.Fatalf("Apply error = %v, want duplicate block error", err)
+	}
+}
+
+func TestApplyRejectsUnknownBlockInLayout(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Groups[0].BlockIDs[0] = "missing-block"
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "unknown block") {
+		t.Fatalf("Apply error = %v, want unknown block error", err)
+	}
+}
+
+func TestApplyRejectsEmptyLayoutGroup(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Groups = append([]Group{{}}, layout.Groups...)
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "empty group") {
+		t.Fatalf("Apply error = %v, want empty group error", err)
+	}
+}
+
+func TestApplyRejectsProtectedBlockEdit(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Edits = []Edit{{BlockID: "block-0053", Replace: &TextReplacement{Old: "11906", New: "1"}}}
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "protected block") {
+		t.Fatalf("Apply error = %v, want protected block error", err)
+	}
+}
+
+func TestApplyRejectsMissingReplacement(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Edits = []Edit{{BlockID: "block-0010"}}
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "missing replacement") {
+		t.Fatalf("Apply error = %v, want missing replacement error", err)
+	}
+}
+
+func TestApplyRejectsMissingOldText(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.Edits = []Edit{{BlockID: "block-0010", Replace: &TextReplacement{Old: "不存在", New: "新文本"}}}
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "cannot find") {
+		t.Fatalf("Apply error = %v, want cannot find error", err)
+	}
+}
+
+func TestExtractAddsAutomaticNumberingToDisplayText(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	block := blockByIDForTest(t, state, "block-0016")
-	if block.Numbering == nil {
-		t.Fatal("block-0016 numbering is nil")
-	}
-	if block.Numbering.Kind != NumberingKindAuto {
-		t.Fatalf("numbering kind = %q, want %q", block.Numbering.Kind, NumberingKindAuto)
-	}
-	if block.Numbering.NumID != "1" {
-		t.Fatalf("numbering num id = %q, want 1", block.Numbering.NumID)
-	}
-	if block.Numbering.Level != 1 {
-		t.Fatalf("numbering level = %d, want 1", block.Numbering.Level)
-	}
-	if block.Numbering.LevelText != "%1.%2" {
-		t.Fatalf("numbering level text = %q, want %%1.%%2", block.Numbering.LevelText)
-	}
-	if block.Numbering.ComputedLabel != "1.2" {
-		t.Fatalf("computed label = %q, want 1.2", block.Numbering.ComputedLabel)
-	}
+	block := blockByIDForTest(t, snapshot, "block-0016")
 	if !strings.HasPrefix(block.DisplayText, "1.2 ") {
 		t.Fatalf("display text = %q, want 1.2 prefix", block.DisplayText)
+	}
+}
+
+func TestExtractUsesNumberingLevelStartValues(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:body>` + numberedParagraphXML("支撑保障", "2", 1) + `</w:body></w:document>`
+	numberingXML := `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:abstractNum w:abstractNumId="1">` +
+		`<w:lvl w:ilvl="0"><w:start w:val="3"/><w:lvlText w:val="%1"/></w:lvl>` +
+		`<w:lvl w:ilvl="1"><w:start w:val="4"/><w:lvlText w:val="%1.%2"/></w:lvl>` +
+		`</w:abstractNum>` +
+		`<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>` +
+		`</w:numbering>`
+
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentAndNumberingXML(t, documentXML, numberingXML)), ExtractOptions{DocumentID: "sample"})
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, snapshot, "block-0001")
+	if block.DisplayText != "3.4 支撑保障" {
+		t.Fatalf("display text = %q, want 3.4 prefix", block.DisplayText)
 	}
 }
 
@@ -162,14 +259,14 @@ func TestBodyBlocksDisplayTextUsesImagePlaceholder(t *testing.T) {
   </w:body>
 </w:document>`)
 
-	state, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	if len(state.Document.Blocks) != 1 {
-		t.Fatalf("blocks = %d, want 1", len(state.Document.Blocks))
+	if len(snapshot.Document.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(snapshot.Document.Blocks))
 	}
-	block := state.Document.Blocks[0]
+	block := snapshot.Document.Blocks[0]
 	if block.Type != BlockTypeParagraph {
 		t.Fatalf("block type = %q, want paragraph", block.Type)
 	}
@@ -202,11 +299,11 @@ func TestBodyBlocksDisplayTextCombinesTextAndImagePlaceholder(t *testing.T) {
   </w:body>
 </w:document>`)
 
-	state, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
-	block := state.Document.Blocks[0]
+	block := snapshot.Document.Blocks[0]
 	if block.Text != "见下图：" {
 		t.Fatalf("block text = %q, want source text only", block.Text)
 	}
@@ -215,65 +312,46 @@ func TestBodyBlocksDisplayTextCombinesTextAndImagePlaceholder(t *testing.T) {
 	}
 }
 
-func TestViewOfReturnsLightweightDocumentView(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestOutlineOfReturnsLightweightDocumentOutline(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	view := ViewOf(state, ViewOptions{})
+	outline := OutlineOf(snapshot, OutlineOptions{})
 
-	if view.DocumentID != "sample" {
-		t.Fatalf("view document id = %q, want sample", view.DocumentID)
+	if outline.DocumentID != "sample" {
+		t.Fatalf("outline document id = %q, want sample", outline.DocumentID)
 	}
-	if len(view.Blocks) != len(state.Document.Blocks) {
-		t.Fatalf("view blocks = %d, want %d", len(view.Blocks), len(state.Document.Blocks))
+	if len(outline.Blocks) != len(snapshot.Document.Blocks) {
+		t.Fatalf("outline blocks = %d, want %d", len(outline.Blocks), len(snapshot.Document.Blocks))
 	}
-	first := view.Blocks[0]
-	if first.ID != state.Document.Blocks[0].ID {
-		t.Fatalf("first view block id = %q, want %q", first.ID, state.Document.Blocks[0].ID)
+	first := outline.Blocks[0]
+	if first.ID != snapshot.Document.Blocks[0].ID {
+		t.Fatalf("first outline block id = %q, want %q", first.ID, snapshot.Document.Blocks[0].ID)
 	}
 	if first.Index != 0 {
-		t.Fatalf("first view block index = %d, want 0", first.Index)
+		t.Fatalf("first outline block index = %d, want 0", first.Index)
 	}
-	if first.Text != state.Document.Blocks[0].DisplayText {
-		t.Fatalf("first view block text = %q, want %q", first.Text, state.Document.Blocks[0].DisplayText)
+	if first.Text != snapshot.Document.Blocks[0].DisplayText {
+		t.Fatalf("first outline block text = %q, want %q", first.Text, snapshot.Document.Blocks[0].DisplayText)
 	}
-	numbered := viewBlockByIDForTest(t, view, "block-0016")
+	numbered := outlineBlockByIDForTest(t, outline, "block-0016")
 	if !strings.HasPrefix(numbered.Text, "1.2 ") {
-		t.Fatalf("numbered view text = %q, want 1.2 prefix", numbered.Text)
+		t.Fatalf("numbered outline text = %q, want 1.2 prefix", numbered.Text)
 	}
 }
 
-func TestViewOfCanUseSourceText(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+func TestOutlineOfDisplaysTablesAsMarkdown(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	view := ViewOf(state, ViewOptions{TextMode: ViewTextModeSource})
+	tableIndex := firstBlockIndexByTypeForTest(t, snapshot, BlockTypeTable)
+	outline := OutlineOf(snapshot, OutlineOptions{})
 
-	numbered := viewBlockByIDForTest(t, view, "block-0016")
-	if strings.HasPrefix(numbered.Text, "1.2 ") {
-		t.Fatalf("numbered source text = %q, want no computed numbering prefix", numbered.Text)
-	}
-	source := blockByIDForTest(t, state, "block-0016")
-	if numbered.Text != source.Text {
-		t.Fatalf("numbered source text = %q, want %q", numbered.Text, source.Text)
-	}
-}
-
-func TestViewOfDisplaysTablesAsMarkdown(t *testing.T) {
-	state, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
-	if err != nil {
-		t.Fatalf("Extract returned error: %v", err)
-	}
-
-	tableIndex := firstBlockIndexByTypeForTest(t, state, BlockTypeTable)
-	displayView := ViewOf(state, ViewOptions{})
-	sourceView := ViewOf(state, ViewOptions{TextMode: ViewTextModeSource})
-
-	displayText := displayView.Blocks[tableIndex].Text
+	displayText := outline.Blocks[tableIndex].Text
 	if !strings.Contains(displayText, "| 问题类型 | 具体表现 | 影响程度 |") {
 		t.Fatalf("display table text = %q, want markdown header row", displayText)
 	}
@@ -283,21 +361,13 @@ func TestViewOfDisplaysTablesAsMarkdown(t *testing.T) {
 	if !strings.Contains(displayText, "| 产教融合问题 | 企业参与度不高 | 严重 |") {
 		t.Fatalf("display table text = %q, want markdown body row", displayText)
 	}
-
-	sourceText := sourceView.Blocks[tableIndex].Text
-	if strings.Contains(sourceText, "| --- |") {
-		t.Fatalf("source table text = %q, want source text without markdown separator", sourceText)
-	}
-	if sourceText != state.Document.Blocks[tableIndex].Text {
-		t.Fatalf("source table text = %q, want %q", sourceText, state.Document.Blocks[tableIndex].Text)
-	}
 }
 
-func TestViewOfDisplaysTableImagesAsMarkdownPlaceholders(t *testing.T) {
-	state := State{
-		Document: Document{
+func TestOutlineOfDisplaysTableImagesAsMarkdownPlaceholders(t *testing.T) {
+	snapshot := Snapshot{
+		Document: DocumentSnapshot{
 			ID: "sample",
-			Blocks: []Block{
+			Blocks: []SnapshotBlock{
 				{
 					ID:   "block-0001",
 					Type: BlockTypeTable,
@@ -318,8 +388,8 @@ func TestViewOfDisplaysTableImagesAsMarkdownPlaceholders(t *testing.T) {
 		},
 	}
 
-	view := ViewOf(state, ViewOptions{})
-	tableText := view.Blocks[0].Text
+	outline := OutlineOf(snapshot, OutlineOptions{})
+	tableText := outline.Blocks[0].Text
 	if !strings.Contains(tableText, "| 图片 |") {
 		t.Fatalf("table text = %q, want markdown header", tableText)
 	}
@@ -374,10 +444,19 @@ func sampleDocx(t *testing.T) []byte {
 func docxWithDocumentXML(t *testing.T, documentXML string) []byte {
 	t.Helper()
 
+	return docxWithDocumentAndNumberingXML(t, documentXML, "")
+}
+
+func docxWithDocumentAndNumberingXML(t *testing.T, documentXML string, numberingXML string) []byte {
+	t.Helper()
+
 	var output bytes.Buffer
 	writer := zip.NewWriter(&output)
 	writeZipEntry(t, writer, "[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>`)
 	writeZipEntry(t, writer, "word/document.xml", documentXML)
+	if numberingXML != "" {
+		writeZipEntry(t, writer, "word/numbering.xml", numberingXML)
+	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close sample docx: %v", err)
 	}
@@ -416,29 +495,29 @@ func writeZipEntry(t *testing.T, writer *zip.Writer, name string, data string) {
 	}
 }
 
-func stateHasPackageFile(state State, name string) bool {
-	for _, file := range state.Files {
-		if file.Name == name {
+func snapshotHasPackagePart(snapshot Snapshot, name string) bool {
+	for _, part := range snapshot.Package.Parts {
+		if part.Name == name {
 			return true
 		}
 	}
 	return false
 }
 
-func blockByIDForTest(t *testing.T, state State, blockID string) Block {
+func blockByIDForTest(t *testing.T, snapshot Snapshot, blockID string) SnapshotBlock {
 	t.Helper()
-	for _, block := range state.Document.Blocks {
+	for _, block := range snapshot.Document.Blocks {
 		if block.ID == blockID {
 			return block
 		}
 	}
 	t.Fatalf("block %s not found", blockID)
-	return Block{}
+	return SnapshotBlock{}
 }
 
-func firstBlockIndexByTypeForTest(t *testing.T, state State, blockType BlockType) int {
+func firstBlockIndexByTypeForTest(t *testing.T, snapshot Snapshot, blockType BlockType) int {
 	t.Helper()
-	for index, block := range state.Document.Blocks {
+	for index, block := range snapshot.Document.Blocks {
 		if block.Type == blockType {
 			return index
 		}
@@ -447,47 +526,26 @@ func firstBlockIndexByTypeForTest(t *testing.T, state State, blockType BlockType
 	return -1
 }
 
-func viewBlockByIDForTest(t *testing.T, view View, blockID string) ViewBlock {
+func outlineBlockByIDForTest(t *testing.T, outline Outline, blockID string) OutlineBlock {
 	t.Helper()
-	for _, block := range view.Blocks {
+	for _, block := range outline.Blocks {
 		if block.ID == blockID {
 			return block
 		}
 	}
-	t.Fatalf("view block %s not found", blockID)
-	return ViewBlock{}
+	t.Fatalf("outline block %s not found", blockID)
+	return OutlineBlock{}
 }
 
-func standardTestTransform() Transform {
-	return Transform{
-		Order: []string{
-			"title",
-			"author",
-			"affiliation",
-			"abstract",
-			"keywords",
-			"body",
-			"references",
-			"front_matter",
-			"tail",
-		},
-		TextEdits: []TextEdit{
-			{Role: "abstract", Old: "摘要：", New: "【摘要：】"},
-			{Role: "keywords", Old: "关键词：", New: "【关键词：】"},
-		},
-	}
-}
-
-func standardTestStructure() Structure {
-	return Structure{
-		Sections: []Section{
-			{Role: "front_matter", BlockIDs: []string{"block-0001", "block-0002", "block-0003", "block-0005", "block-0009"}},
-			{Role: "title", BlockIDs: []string{"block-0004"}},
-			{Role: "author", BlockIDs: []string{"block-0006", "block-0007"}},
-			{Role: "affiliation", BlockIDs: []string{"block-0008"}},
-			{Role: "abstract", BlockIDs: []string{"block-0010"}},
-			{Role: "keywords", BlockIDs: []string{"block-0011"}},
-			{Role: "body", BlockIDs: []string{
+func standardTestLayout() Layout {
+	return Layout{
+		Groups: []Group{
+			{BlockIDs: []string{"block-0004"}},
+			{BlockIDs: []string{"block-0006", "block-0007"}},
+			{BlockIDs: []string{"block-0008"}},
+			{BlockIDs: []string{"block-0010"}},
+			{BlockIDs: []string{"block-0011"}},
+			{BlockIDs: []string{
 				"block-0012",
 				"block-0013",
 				"block-0014",
@@ -524,8 +582,21 @@ func standardTestStructure() Structure {
 				"block-0045",
 				"block-0046",
 			}},
-			{Role: "references", BlockIDs: []string{"block-0047", "block-0048", "block-0049", "block-0050", "block-0051", "block-0052"}},
-			{Role: "tail", BlockIDs: []string{"block-0053"}},
+			{BlockIDs: []string{"block-0047", "block-0048", "block-0049", "block-0050", "block-0051", "block-0052"}},
+			{BlockIDs: []string{"block-0001", "block-0002", "block-0003", "block-0005", "block-0009"}},
+			{BlockIDs: []string{"block-0053"}},
+		},
+		Edits: []Edit{
+			{BlockID: "block-0010", Replace: &TextReplacement{Old: "摘要：", New: "【摘要：】"}},
+			{BlockID: "block-0011", Replace: &TextReplacement{Old: "关键词：", New: "【关键词：】"}},
 		},
 	}
+}
+
+func completeLayoutFromSnapshot(snapshot Snapshot) Layout {
+	blockIDs := make([]string, 0, len(snapshot.Document.Blocks))
+	for _, block := range snapshot.Document.Blocks {
+		blockIDs = append(blockIDs, block.ID)
+	}
+	return Layout{Groups: []Group{{BlockIDs: blockIDs}}}
 }

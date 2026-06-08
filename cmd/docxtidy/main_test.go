@@ -12,28 +12,28 @@ import (
 	"github.com/kiry163/docxtidy"
 )
 
-func TestCLIExtractWritesState(t *testing.T) {
+func TestCLIExtractWritesSnapshot(t *testing.T) {
 	workDir := t.TempDir()
 	inputPath := writeMainTestDocx(t, workDir)
-	outPath := filepath.Join(workDir, "state.json")
+	outPath := filepath.Join(workDir, "snapshot.json")
 
 	if err := run([]string{"extract", inputPath, "--out", outPath}); err != nil {
 		t.Fatalf("run extract returned error: %v", err)
 	}
 
-	state := readMainTestState(t, outPath)
-	if len(state.Files) == 0 {
-		t.Fatal("state has no package files")
+	snapshot := readMainTestSnapshot(t, outPath)
+	if len(snapshot.Package.Parts) == 0 {
+		t.Fatal("snapshot has no package parts")
 	}
-	if len(state.Document.Blocks) == 0 {
-		t.Fatal("state has no document blocks")
+	if len(snapshot.Document.Blocks) == 0 {
+		t.Fatal("snapshot has no document blocks")
 	}
 }
 
 func TestCLIExtractWritesReadableXMLInJSON(t *testing.T) {
 	workDir := t.TempDir()
 	inputPath := writeMainTestDocx(t, workDir)
-	outPath := filepath.Join(workDir, "state.json")
+	outPath := filepath.Join(workDir, "snapshot.json")
 
 	if err := run([]string{"extract", inputPath, "--out", outPath}); err != nil {
 		t.Fatalf("run extract returned error: %v", err)
@@ -41,84 +41,80 @@ func TestCLIExtractWritesReadableXMLInJSON(t *testing.T) {
 
 	data, err := os.ReadFile(outPath)
 	if err != nil {
-		t.Fatalf("read state json: %v", err)
+		t.Fatalf("read snapshot json: %v", err)
 	}
 	jsonText := string(data)
 	if !strings.Contains(jsonText, `"<w:p`) {
-		t.Fatalf("state json does not contain readable XML start tag")
+		t.Fatalf("snapshot json does not contain readable XML start tag")
 	}
 	if strings.Contains(jsonText, `\u003c`) || strings.Contains(jsonText, `\u003e`) {
-		t.Fatalf("state json contains HTML-escaped XML")
+		t.Fatalf("snapshot json contains HTML-escaped XML")
 	}
 }
 
-func TestCLIViewWritesDocumentView(t *testing.T) {
+func TestCLIOutlineWritesDocumentOutline(t *testing.T) {
 	workDir := t.TempDir()
 	inputPath := writeMainTestDocx(t, workDir)
-	statePath := filepath.Join(workDir, "state.json")
-	viewPath := filepath.Join(workDir, "view.json")
-	if err := run([]string{"extract", inputPath, "--out", statePath}); err != nil {
+	snapshotPath := filepath.Join(workDir, "snapshot.json")
+	outlinePath := filepath.Join(workDir, "outline.json")
+	if err := run([]string{"extract", inputPath, "--out", snapshotPath}); err != nil {
 		t.Fatalf("run extract returned error: %v", err)
 	}
 
-	if err := run([]string{"view", statePath, "--out", viewPath}); err != nil {
-		t.Fatalf("run view returned error: %v", err)
+	if err := run([]string{"outline", snapshotPath, "--out", outlinePath}); err != nil {
+		t.Fatalf("run outline returned error: %v", err)
 	}
 
-	view := readMainTestView(t, viewPath)
-	if len(view.Blocks) == 0 {
-		t.Fatal("view has no blocks")
+	outline := readMainTestOutline(t, outlinePath)
+	if len(outline.Blocks) == 0 {
+		t.Fatal("outline has no blocks")
 	}
-	if view.Blocks[0].ID == "" {
-		t.Fatal("first view block id is empty")
+	if outline.Blocks[0].ID == "" {
+		t.Fatal("first outline block id is empty")
 	}
 }
 
-func TestCLIApplyWritesUpdatedState(t *testing.T) {
+func TestCLIApplyWritesUpdatedSnapshot(t *testing.T) {
 	workDir := t.TempDir()
 	inputPath := writeMainTestDocx(t, workDir)
-	statePath := filepath.Join(workDir, "state.json")
-	structurePath := filepath.Join(workDir, "structure.json")
-	transformPath := filepath.Join(workDir, "transform.json")
-	updatedPath := filepath.Join(workDir, "updated-state.json")
-	writeMainTestJSON(t, structurePath, mainTestStructure())
-	writeMainTestJSON(t, transformPath, mainTestTransform())
-	if err := run([]string{"extract", inputPath, "--out", statePath}); err != nil {
+	snapshotPath := filepath.Join(workDir, "snapshot.json")
+	layoutPath := filepath.Join(workDir, "layout.json")
+	updatedPath := filepath.Join(workDir, "updated-snapshot.json")
+	writeMainTestJSON(t, layoutPath, mainTestLayout())
+	if err := run([]string{"extract", inputPath, "--out", snapshotPath}); err != nil {
 		t.Fatalf("run extract returned error: %v", err)
 	}
 
 	if err := run([]string{
 		"apply",
-		statePath,
-		"--structure",
-		structurePath,
-		"--transform",
-		transformPath,
+		snapshotPath,
+		"--layout",
+		layoutPath,
 		"--out",
 		updatedPath,
 	}); err != nil {
 		t.Fatalf("run apply returned error: %v", err)
 	}
 
-	state := readMainTestState(t, updatedPath)
-	if state.Document.Blocks[0].ID != "block-0004" {
-		t.Fatalf("first block = %q, want block-0004", state.Document.Blocks[0].ID)
+	snapshot := readMainTestSnapshot(t, updatedPath)
+	if snapshot.Document.Blocks[0].ID != "block-0004" {
+		t.Fatalf("first block = %q, want block-0004", snapshot.Document.Blocks[0].ID)
 	}
-	if state.Document.Blocks[4].Text[:len("【摘要：】")] != "【摘要：】" {
-		t.Fatalf("abstract block text = %q, want standardized prefix", state.Document.Blocks[4].Text)
+	if snapshot.Document.Blocks[4].Text[:len("【摘要：】")] != "【摘要：】" {
+		t.Fatalf("abstract block text = %q, want standardized prefix", snapshot.Document.Blocks[4].Text)
 	}
 }
 
-func TestCLIWriteCreatesDocxFromState(t *testing.T) {
+func TestCLIWriteCreatesDocxFromSnapshot(t *testing.T) {
 	workDir := t.TempDir()
 	inputPath := writeMainTestDocx(t, workDir)
-	statePath := filepath.Join(workDir, "state.json")
+	snapshotPath := filepath.Join(workDir, "snapshot.json")
 	outputPath := filepath.Join(workDir, "output.docx")
-	if err := run([]string{"extract", inputPath, "--out", statePath}); err != nil {
+	if err := run([]string{"extract", inputPath, "--out", snapshotPath}); err != nil {
 		t.Fatalf("run extract returned error: %v", err)
 	}
 
-	if err := run([]string{"write", statePath, "--out", outputPath}); err != nil {
+	if err := run([]string{"write", snapshotPath, "--out", outputPath}); err != nil {
 		t.Fatalf("run write returned error: %v", err)
 	}
 
@@ -140,34 +136,34 @@ func TestCLIWriteCreatesDocxFromState(t *testing.T) {
 	}
 }
 
-func readMainTestState(t *testing.T, statePath string) docxtidy.State {
+func readMainTestSnapshot(t *testing.T, snapshotPath string) docxtidy.Snapshot {
 	t.Helper()
 
-	data, err := os.ReadFile(statePath)
+	data, err := os.ReadFile(snapshotPath)
 	if err != nil {
-		t.Fatalf("read state: %v", err)
+		t.Fatalf("read snapshot: %v", err)
 	}
 
-	var state docxtidy.State
-	if err := json.Unmarshal(data, &state); err != nil {
-		t.Fatalf("decode state: %v", err)
+	var snapshot docxtidy.Snapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
 	}
-	return state
+	return snapshot
 }
 
-func readMainTestView(t *testing.T, viewPath string) docxtidy.View {
+func readMainTestOutline(t *testing.T, outlinePath string) docxtidy.Outline {
 	t.Helper()
 
-	data, err := os.ReadFile(viewPath)
+	data, err := os.ReadFile(outlinePath)
 	if err != nil {
-		t.Fatalf("read view: %v", err)
+		t.Fatalf("read outline: %v", err)
 	}
 
-	var view docxtidy.View
-	if err := json.Unmarshal(data, &view); err != nil {
-		t.Fatalf("decode view: %v", err)
+	var outline docxtidy.Outline
+	if err := json.Unmarshal(data, &outline); err != nil {
+		t.Fatalf("decode outline: %v", err)
 	}
-	return view
+	return outline
 }
 
 func writeMainTestDocx(t *testing.T, dir string) string {
@@ -240,36 +236,15 @@ func writeMainTestJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func mainTestTransform() docxtidy.Transform {
-	return docxtidy.Transform{
-		Order: []string{
-			"title",
-			"author",
-			"affiliation",
-			"abstract",
-			"keywords",
-			"body",
-			"references",
-			"front_matter",
-			"tail",
-		},
-		TextEdits: []docxtidy.TextEdit{
-			{Role: "abstract", Old: "摘要：", New: "【摘要：】"},
-			{Role: "keywords", Old: "关键词：", New: "【关键词：】"},
-		},
-	}
-}
-
-func mainTestStructure() docxtidy.Structure {
-	return docxtidy.Structure{
-		Sections: []docxtidy.Section{
-			{Role: "front_matter", BlockIDs: []string{"block-0001", "block-0002", "block-0003", "block-0005", "block-0009"}},
-			{Role: "title", BlockIDs: []string{"block-0004"}},
-			{Role: "author", BlockIDs: []string{"block-0006", "block-0007"}},
-			{Role: "affiliation", BlockIDs: []string{"block-0008"}},
-			{Role: "abstract", BlockIDs: []string{"block-0010"}},
-			{Role: "keywords", BlockIDs: []string{"block-0011"}},
-			{Role: "body", BlockIDs: []string{
+func mainTestLayout() docxtidy.Layout {
+	return docxtidy.Layout{
+		Groups: []docxtidy.Group{
+			{BlockIDs: []string{"block-0004"}},
+			{BlockIDs: []string{"block-0006", "block-0007"}},
+			{BlockIDs: []string{"block-0008"}},
+			{BlockIDs: []string{"block-0010"}},
+			{BlockIDs: []string{"block-0011"}},
+			{BlockIDs: []string{
 				"block-0012",
 				"block-0013",
 				"block-0014",
@@ -306,8 +281,13 @@ func mainTestStructure() docxtidy.Structure {
 				"block-0045",
 				"block-0046",
 			}},
-			{Role: "references", BlockIDs: []string{"block-0047", "block-0048", "block-0049", "block-0050", "block-0051", "block-0052"}},
-			{Role: "tail", BlockIDs: []string{"block-0053"}},
+			{BlockIDs: []string{"block-0047", "block-0048", "block-0049", "block-0050", "block-0051", "block-0052"}},
+			{BlockIDs: []string{"block-0001", "block-0002", "block-0003", "block-0005", "block-0009"}},
+			{BlockIDs: []string{"block-0053"}},
+		},
+		Edits: []docxtidy.Edit{
+			{BlockID: "block-0010", Replace: &docxtidy.TextReplacement{Old: "摘要：", New: "【摘要：】"}},
+			{BlockID: "block-0011", Replace: &docxtidy.TextReplacement{Old: "关键词：", New: "【关键词：】"}},
 		},
 	}
 }

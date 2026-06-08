@@ -7,32 +7,34 @@ import (
 	"github.com/kiry163/docxtidy/internal/ooxml"
 )
 
-func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (State, error) {
+func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (Snapshot, error) {
 	rawState, err := ooxml.Extract(ctx, r)
 	if err != nil {
-		return State{}, err
+		return Snapshot{}, err
 	}
 
-	return State{
-		Document: Document{
+	return Snapshot{
+		Document: DocumentSnapshot{
 			ID:     opts.DocumentID,
 			Blocks: blocksFromOOXML(rawState.Blocks),
 		},
-		Files: packageFilesFromOOXML(rawState.Files),
+		Package: PackageSnapshot{
+			Parts: packagePartsFromOOXML(rawState.Files),
+		},
 	}, nil
 }
 
-func Write(ctx context.Context, state State, w io.Writer) error {
+func Write(ctx context.Context, snapshot Snapshot, w io.Writer) error {
 	return ooxml.Write(ctx, ooxml.State{
-		Blocks: blocksToOOXML(state.Document.Blocks),
-		Files:  packageFilesToOOXML(state.Files),
+		Blocks: blocksToOOXML(snapshot.Document.Blocks),
+		Files:  packagePartsToOOXML(snapshot.Package.Parts),
 	}, w)
 }
 
-func packageFilesFromOOXML(files []ooxml.PackageFile) []PackageFile {
-	converted := make([]PackageFile, 0, len(files))
+func packagePartsFromOOXML(files []ooxml.PackageFile) []PackagePart {
+	converted := make([]PackagePart, 0, len(files))
 	for _, file := range files {
-		converted = append(converted, PackageFile{
+		converted = append(converted, PackagePart{
 			Name: file.Name,
 			Data: append([]byte(nil), file.Data...),
 		})
@@ -40,38 +42,37 @@ func packageFilesFromOOXML(files []ooxml.PackageFile) []PackageFile {
 	return converted
 }
 
-func packageFilesToOOXML(files []PackageFile) []ooxml.PackageFile {
-	converted := make([]ooxml.PackageFile, 0, len(files))
-	for _, file := range files {
+func packagePartsToOOXML(parts []PackagePart) []ooxml.PackageFile {
+	converted := make([]ooxml.PackageFile, 0, len(parts))
+	for _, part := range parts {
 		converted = append(converted, ooxml.PackageFile{
-			Name: file.Name,
-			Data: append([]byte(nil), file.Data...),
+			Name: part.Name,
+			Data: append([]byte(nil), part.Data...),
 		})
 	}
 	return converted
 }
 
-func blocksFromOOXML(blocks []ooxml.Block) []Block {
-	converted := make([]Block, 0, len(blocks))
+func blocksFromOOXML(blocks []ooxml.Block) []SnapshotBlock {
+	converted := make([]SnapshotBlock, 0, len(blocks))
 	for _, block := range blocks {
 		converted = append(converted, blockFromOOXML(block))
 	}
 	return converted
 }
 
-func blockFromOOXML(block ooxml.Block) Block {
-	return Block{
+func blockFromOOXML(block ooxml.Block) SnapshotBlock {
+	return SnapshotBlock{
 		ID:          block.ID,
 		Type:        blockTypeFromOOXML(block.Type),
 		Text:        block.Text,
 		DisplayText: block.DisplayText,
 		XML:         block.XML,
-		Numbering:   numberingInfoFromOOXML(block.Numbering),
 		Protected:   block.Protected,
 	}
 }
 
-func blocksToOOXML(blocks []Block) []ooxml.Block {
+func blocksToOOXML(blocks []SnapshotBlock) []ooxml.Block {
 	converted := make([]ooxml.Block, 0, len(blocks))
 	for _, block := range blocks {
 		converted = append(converted, blockToOOXML(block))
@@ -79,14 +80,13 @@ func blocksToOOXML(blocks []Block) []ooxml.Block {
 	return converted
 }
 
-func blockToOOXML(block Block) ooxml.Block {
+func blockToOOXML(block SnapshotBlock) ooxml.Block {
 	return ooxml.Block{
 		ID:          block.ID,
 		Type:        blockTypeToOOXML(block.Type),
 		Text:        block.Text,
 		DisplayText: block.DisplayText,
 		XML:         block.XML,
-		Numbering:   numberingInfoToOOXML(block.Numbering),
 		Protected:   block.Protected,
 	}
 }
@@ -114,49 +114,5 @@ func blockTypeToOOXML(blockType BlockType) ooxml.BlockType {
 		return ooxml.BlockTypeSection
 	default:
 		return ooxml.BlockType(blockType)
-	}
-}
-
-func numberingInfoFromOOXML(info *ooxml.NumberingInfo) *NumberingInfo {
-	if info == nil {
-		return nil
-	}
-	return &NumberingInfo{
-		Kind:          numberingKindFromOOXML(info.Kind),
-		NumID:         info.NumID,
-		Level:         info.Level,
-		LevelText:     info.LevelText,
-		ComputedLabel: info.ComputedLabel,
-	}
-}
-
-func numberingInfoToOOXML(info *NumberingInfo) *ooxml.NumberingInfo {
-	if info == nil {
-		return nil
-	}
-	return &ooxml.NumberingInfo{
-		Kind:          numberingKindToOOXML(info.Kind),
-		NumID:         info.NumID,
-		Level:         info.Level,
-		LevelText:     info.LevelText,
-		ComputedLabel: info.ComputedLabel,
-	}
-}
-
-func numberingKindFromOOXML(kind ooxml.NumberingKind) NumberingKind {
-	switch kind {
-	case ooxml.NumberingKindAuto:
-		return NumberingKindAuto
-	default:
-		return NumberingKind(kind)
-	}
-}
-
-func numberingKindToOOXML(kind NumberingKind) ooxml.NumberingKind {
-	switch kind {
-	case NumberingKindAuto:
-		return ooxml.NumberingKindAuto
-	default:
-		return ooxml.NumberingKind(kind)
 	}
 }

@@ -27,8 +27,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "extract":
 		return runExtract(args[1:])
-	case "view":
-		return runView(args[1:])
+	case "outline":
+		return runOutline(args[1:])
 	case "apply":
 		return runApply(args[1:])
 	case "write":
@@ -47,7 +47,7 @@ func runExtract(args []string) error {
 		return err
 	}
 	if inputPath == "" || outDir == "" {
-		return fmt.Errorf("usage: docxtidy extract <input.docx> --out <state.json>")
+		return fmt.Errorf("usage: docxtidy extract <input.docx> --out <snapshot.json>")
 	}
 
 	input, err := os.Open(inputPath)
@@ -56,33 +56,33 @@ func runExtract(args []string) error {
 	}
 	defer input.Close()
 
-	state, err := docxtidy.Extract(context.Background(), input, docxtidy.ExtractOptions{})
+	snapshot, err := docxtidy.Extract(context.Background(), input, docxtidy.ExtractOptions{})
 	if err != nil {
 		return err
 	}
-	if err := writeJSON(outDir, state); err != nil {
+	if err := writeJSON(outDir, snapshot); err != nil {
 		return err
 	}
 	fmt.Println(outDir)
 	return nil
 }
 
-func runView(args []string) error {
-	statePath, outPath, err := parseInputAndOut(args)
+func runOutline(args []string) error {
+	snapshotPath, outPath, err := parseInputAndOut(args)
 	if err != nil {
 		return err
 	}
-	if statePath == "" || outPath == "" {
-		return fmt.Errorf("usage: docxtidy view <state.json> --out <view.json>")
+	if snapshotPath == "" || outPath == "" {
+		return fmt.Errorf("usage: docxtidy outline <snapshot.json> --out <outline.json>")
 	}
 
-	var state docxtidy.State
-	if err := readJSON(statePath, &state); err != nil {
-		return fmt.Errorf("read state: %w", err)
+	var snapshot docxtidy.Snapshot
+	if err := readJSON(snapshotPath, &snapshot); err != nil {
+		return fmt.Errorf("read snapshot: %w", err)
 	}
 
-	view := docxtidy.ViewOf(state, docxtidy.ViewOptions{})
-	if err := writeJSON(outPath, view); err != nil {
+	outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+	if err := writeJSON(outPath, outline); err != nil {
 		return err
 	}
 	fmt.Println(outPath)
@@ -90,31 +90,26 @@ func runView(args []string) error {
 }
 
 func runApply(args []string) error {
-	statePath, options, err := parseInputAndOptions(args)
+	snapshotPath, options, err := parseInputAndOptions(args)
 	if err != nil {
 		return err
 	}
-	structurePath := options["structure"]
-	transformPath := options["transform"]
+	layoutPath := options["layout"]
 	outPath := options["out"]
-	if statePath == "" || structurePath == "" || transformPath == "" || outPath == "" {
-		return fmt.Errorf("usage: docxtidy apply <state.json> --structure <structure.json> --transform <transform.json> --out <new-state.json>")
+	if snapshotPath == "" || layoutPath == "" || outPath == "" {
+		return fmt.Errorf("usage: docxtidy apply <snapshot.json> --layout <layout.json> --out <updated-snapshot.json>")
 	}
 
-	var state docxtidy.State
-	if err := readJSON(statePath, &state); err != nil {
-		return fmt.Errorf("read state: %w", err)
+	var snapshot docxtidy.Snapshot
+	if err := readJSON(snapshotPath, &snapshot); err != nil {
+		return fmt.Errorf("read snapshot: %w", err)
 	}
-	var structure docxtidy.Structure
-	if err := readJSON(structurePath, &structure); err != nil {
-		return fmt.Errorf("read structure: %w", err)
-	}
-	var transform docxtidy.Transform
-	if err := readJSON(transformPath, &transform); err != nil {
-		return fmt.Errorf("read transform: %w", err)
+	var layout docxtidy.Layout
+	if err := readJSON(layoutPath, &layout); err != nil {
+		return fmt.Errorf("read layout: %w", err)
 	}
 
-	updated, err := docxtidy.Apply(context.Background(), state, structure, transform)
+	updated, err := docxtidy.Apply(context.Background(), snapshot, layout)
 	if err != nil {
 		return err
 	}
@@ -126,17 +121,17 @@ func runApply(args []string) error {
 }
 
 func runWrite(args []string) error {
-	statePath, outPath, err := parseInputAndOut(args)
+	snapshotPath, outPath, err := parseInputAndOut(args)
 	if err != nil {
 		return err
 	}
-	if statePath == "" || outPath == "" {
-		return fmt.Errorf("usage: docxtidy write <state.json> --out <output.docx>")
+	if snapshotPath == "" || outPath == "" {
+		return fmt.Errorf("usage: docxtidy write <snapshot.json> --out <output.docx>")
 	}
 
-	var state docxtidy.State
-	if err := readJSON(statePath, &state); err != nil {
-		return fmt.Errorf("read state: %w", err)
+	var snapshot docxtidy.Snapshot
+	if err := readJSON(snapshotPath, &snapshot); err != nil {
+		return fmt.Errorf("read snapshot: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -148,7 +143,7 @@ func runWrite(args []string) error {
 	}
 	defer output.Close()
 
-	if err := docxtidy.Write(context.Background(), state, output); err != nil {
+	if err := docxtidy.Write(context.Background(), snapshot, output); err != nil {
 		return err
 	}
 	fmt.Println(outPath)
@@ -162,10 +157,10 @@ func usageError() error {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  docxtidy extract <input.docx> --out <state.json>")
-	fmt.Fprintln(os.Stderr, "  docxtidy view <state.json> --out <view.json>")
-	fmt.Fprintln(os.Stderr, "  docxtidy apply <state.json> --structure <structure.json> --transform <transform.json> --out <new-state.json>")
-	fmt.Fprintln(os.Stderr, "  docxtidy write <state.json> --out <output.docx>")
+	fmt.Fprintln(os.Stderr, "  docxtidy extract <input.docx> --out <snapshot.json>")
+	fmt.Fprintln(os.Stderr, "  docxtidy outline <snapshot.json> --out <outline.json>")
+	fmt.Fprintln(os.Stderr, "  docxtidy apply <snapshot.json> --layout <layout.json> --out <updated-snapshot.json>")
+	fmt.Fprintln(os.Stderr, "  docxtidy write <snapshot.json> --out <output.docx>")
 }
 
 func readJSON(path string, target any) error {

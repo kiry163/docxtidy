@@ -11,12 +11,14 @@ import (
 type numberingDefinitions struct {
 	numToAbstract map[string]string
 	levels        map[string]map[int]string
+	starts        map[string]map[int]int
 }
 
 func parseNumberingDefinitions(numberingXML []byte) (numberingDefinitions, error) {
 	definitions := numberingDefinitions{
 		numToAbstract: map[string]string{},
 		levels:        map[string]map[int]string{},
+		starts:        map[string]map[int]int{},
 	}
 	if len(numberingXML) == 0 {
 		return definitions, nil
@@ -43,8 +45,15 @@ func parseNumberingDefinitions(numberingXML []byte) (numberingDefinitions, error
 				if currentAbstractID != "" && definitions.levels[currentAbstractID] == nil {
 					definitions.levels[currentAbstractID] = map[int]string{}
 				}
+				if currentAbstractID != "" && definitions.starts[currentAbstractID] == nil {
+					definitions.starts[currentAbstractID] = map[int]int{}
+				}
 			case "lvl":
 				currentLevel = attrInt(t, "ilvl", -1)
+			case "start":
+				if currentAbstractID != "" && currentLevel >= 0 {
+					definitions.starts[currentAbstractID][currentLevel] = attrInt(t, "val", 1)
+				}
 			case "lvlText":
 				if currentAbstractID != "" && currentLevel >= 0 {
 					definitions.levels[currentAbstractID][currentLevel] = attrValue(t, "val")
@@ -95,10 +104,14 @@ func (s *numberingState) numberingInfoForBlock(blockXML string) *NumberingInfo {
 	}
 	for i := 0; i < level; i++ {
 		if counters[i] == 0 {
-			counters[i] = 1
+			counters[i] = s.levelStart(numID, i)
 		}
 	}
-	counters[level]++
+	if counters[level] == 0 {
+		counters[level] = s.levelStart(numID, level)
+	} else {
+		counters[level]++
+	}
 	for i := level + 1; i < len(counters); i++ {
 		counters[i] = 0
 	}
@@ -121,6 +134,18 @@ func (s *numberingState) levelText(numID string, level int) string {
 		return ""
 	}
 	return s.definitions.levels[abstractID][level]
+}
+
+func (s *numberingState) levelStart(numID string, level int) int {
+	abstractID := s.definitions.numToAbstract[numID]
+	if abstractID == "" {
+		return 1
+	}
+	start := s.definitions.starts[abstractID][level]
+	if start == 0 {
+		return 1
+	}
+	return start
 }
 
 func paragraphNumbering(blockXML string) (string, int, bool) {
