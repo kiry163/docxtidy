@@ -4,7 +4,7 @@ type ExtractOptions struct {
 	DocumentID string
 }
 
-type DocumentState struct {
+type State struct {
 	Document Document      `json:"document"`
 	Files    []PackageFile `json:"files"`
 }
@@ -61,13 +61,37 @@ type Section struct {
 	BlockIDs []string `json:"block_ids"`
 }
 
-type Layout struct {
-	Order            []string          `json:"order"`
-	TextReplacements []TextReplacement `json:"text_replacements,omitempty"`
+type Transform struct {
+	Order     []string   `json:"order"`
+	TextEdits []TextEdit `json:"text_edits,omitempty"`
 }
 
-type TextReplacement struct {
+type TextEdit struct {
 	Role string `json:"role"`
 	Old  string `json:"old"`
 	New  string `json:"new"`
+}
+
+type ViewOptions struct {
+	TextMode ViewTextMode `json:"text_mode,omitempty"`
+}
+
+type ViewTextMode string
+
+const (
+	ViewTextModeDisplay ViewTextMode = "display"
+	ViewTextModeSource  ViewTextMode = "source"
+)
+
+type View struct {
+	DocumentID string      `json:"document_id,omitempty"`
+	Blocks     []ViewBlock `json:"blocks"`
+}
+
+type ViewBlock struct {
+	ID        string    `json:"id"`
+	Index     int       `json:"index"`
+	Type      BlockType `json:"type"`
+	Text      string    `json:"text"`
+	Protected bool      `json:"protected,omitempty"`
 }

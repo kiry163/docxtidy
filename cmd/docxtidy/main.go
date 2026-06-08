@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,8 +27,10 @@ func run(args []string) error {
 	switch args[0] {
 	case "extract":
 		return runExtract(args[1:])
-	case "apply-layout":
-		return runApplyLayout(args[1:])
+	case "view":
+		return runView(args[1:])
+	case "apply":
+		return runApply(args[1:])
 	case "write":
 		return runWrite(args[1:])
 	case "-h", "--help", "help":
@@ -64,19 +67,41 @@ func runExtract(args []string) error {
 	return nil
 }
 
-func runApplyLayout(args []string) error {
+func runView(args []string) error {
+	statePath, outPath, err := parseInputAndOut(args)
+	if err != nil {
+		return err
+	}
+	if statePath == "" || outPath == "" {
+		return fmt.Errorf("usage: docxtidy view <state.json> --out <view.json>")
+	}
+
+	var state docxtidy.State
+	if err := readJSON(statePath, &state); err != nil {
+		return fmt.Errorf("read state: %w", err)
+	}
+
+	view := docxtidy.ViewOf(state, docxtidy.ViewOptions{})
+	if err := writeJSON(outPath, view); err != nil {
+		return err
+	}
+	fmt.Println(outPath)
+	return nil
+}
+
+func runApply(args []string) error {
 	statePath, options, err := parseInputAndOptions(args)
 	if err != nil {
 		return err
 	}
 	structurePath := options["structure"]
-	layoutPath := options["layout"]
+	transformPath := options["transform"]
 	outPath := options["out"]
-	if statePath == "" || structurePath == "" || layoutPath == "" || outPath == "" {
-		return fmt.Errorf("usage: docxtidy apply-layout <state.json> --structure <structure.json> --layout <layout.json> --out <new-state.json>")
+	if statePath == "" || structurePath == "" || transformPath == "" || outPath == "" {
+		return fmt.Errorf("usage: docxtidy apply <state.json> --structure <structure.json> --transform <transform.json> --out <new-state.json>")
 	}
 
-	var state docxtidy.DocumentState
+	var state docxtidy.State
 	if err := readJSON(statePath, &state); err != nil {
 		return fmt.Errorf("read state: %w", err)
 	}
@@ -84,12 +109,12 @@ func runApplyLayout(args []string) error {
 	if err := readJSON(structurePath, &structure); err != nil {
 		return fmt.Errorf("read structure: %w", err)
 	}
-	var layout docxtidy.Layout
-	if err := readJSON(layoutPath, &layout); err != nil {
-		return fmt.Errorf("read layout: %w", err)
+	var transform docxtidy.Transform
+	if err := readJSON(transformPath, &transform); err != nil {
+		return fmt.Errorf("read transform: %w", err)
 	}
 
-	updated, err := docxtidy.ApplyLayout(context.Background(), state, structure, layout)
+	updated, err := docxtidy.Apply(context.Background(), state, structure, transform)
 	if err != nil {
 		return err
 	}
@@ -109,7 +134,7 @@ func runWrite(args []string) error {
 		return fmt.Errorf("usage: docxtidy write <state.json> --out <output.docx>")
 	}
 
-	var state docxtidy.DocumentState
+	var state docxtidy.State
 	if err := readJSON(statePath, &state); err != nil {
 		return fmt.Errorf("read state: %w", err)
 	}
@@ -138,7 +163,8 @@ func usageError() error {
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  docxtidy extract <input.docx> --out <state.json>")
-	fmt.Fprintln(os.Stderr, "  docxtidy apply-layout <state.json> --structure <structure.json> --layout <layout.json> --out <new-state.json>")
+	fmt.Fprintln(os.Stderr, "  docxtidy view <state.json> --out <view.json>")
+	fmt.Fprintln(os.Stderr, "  docxtidy apply <state.json> --structure <structure.json> --transform <transform.json> --out <new-state.json>")
 	fmt.Fprintln(os.Stderr, "  docxtidy write <state.json> --out <output.docx>")
 }
 
@@ -154,14 +180,17 @@ func readJSON(path string, target any) error {
 }
 
 func writeJSON(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
+	var data bytes.Buffer
+	encoder := json.NewEncoder(&data)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
 		return fmt.Errorf("encode json: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(path, data.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write json: %w", err)
 	}
 	return nil

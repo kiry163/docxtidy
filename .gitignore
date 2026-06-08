@@ -1,1 +1,10 @@
-test.docx
+.DS_Store
+.idea/
+
+# Local documents used for manual experiments. Tests generate DOCX fixtures in
+# temporary directories and must not depend on checked-in Word files.
+*.docx
+*.docm
+*.dotx
+*.dotm
+!docs/**/*.md

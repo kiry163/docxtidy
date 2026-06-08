@@ -1,15 +1,14 @@
 package docxtidy
 
 import (
-	"bytes"
 	"context"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"strings"
+
+	"github.com/kiry163/docxtidy/internal/ooxml"
 )
 
-func Validate(ctx context.Context, state DocumentState, structure Structure, layout Layout) error {
+func Validate(ctx context.Context, state State, structure Structure, transform Transform) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -21,42 +20,42 @@ func Validate(ctx context.Context, state DocumentState, structure Structure, lay
 	if err != nil {
 		return err
 	}
-	return validateLayout(layout, sectionsByRole)
+	return validateTransform(transform, sectionsByRole)
 }
 
-func ApplyLayout(ctx context.Context, state DocumentState, structure Structure, layout Layout) (DocumentState, error) {
+func Apply(ctx context.Context, state State, structure Structure, transform Transform) (State, error) {
 	if err := ctx.Err(); err != nil {
-		return DocumentState{}, err
+		return State{}, err
 	}
 	blockByID, err := blockMap(state.Document.Blocks)
 	if err != nil {
-		return DocumentState{}, err
+		return State{}, err
 	}
 	sectionsByRole, err := validateStructure(structure, blockByID)
 	if err != nil {
-		return DocumentState{}, err
+		return State{}, err
 	}
-	if err := validateLayout(layout, sectionsByRole); err != nil {
-		return DocumentState{}, err
+	if err := validateTransform(transform, sectionsByRole); err != nil {
+		return State{}, err
 	}
 
-	for _, replacement := range layout.TextReplacements {
-		if err := applyRoleTextReplacement(blockByID, sectionsByRole, replacement); err != nil {
-			return DocumentState{}, err
+	for _, edit := range transform.TextEdits {
+		if err := applyRoleTextEdit(blockByID, sectionsByRole, edit); err != nil {
+			return State{}, err
 		}
 	}
 
 	rebuiltBlocks := make([]Block, 0, len(state.Document.Blocks))
-	for _, role := range layout.Order {
+	for _, role := range transform.Order {
 		for _, blockID := range sectionsByRole[role].BlockIDs {
 			rebuiltBlocks = append(rebuiltBlocks, blockByID[blockID])
 		}
 	}
 	if len(rebuiltBlocks) != len(state.Document.Blocks) {
-		return DocumentState{}, fmt.Errorf("layout produced %d blocks, want %d", len(rebuiltBlocks), len(state.Document.Blocks))
+		return State{}, fmt.Errorf("transform produced %d blocks, want %d", len(rebuiltBlocks), len(state.Document.Blocks))
 	}
 	if hasBlockType(state.Document.Blocks, BlockTypeSection) && rebuiltBlocks[len(rebuiltBlocks)-1].Type != BlockTypeSection {
-		return DocumentState{}, fmt.Errorf("sectPr block must remain last")
+		return State{}, fmt.Errorf("sectPr block must remain last")
 	}
 
 	updated := copyState(state)
@@ -64,8 +63,8 @@ func ApplyLayout(ctx context.Context, state DocumentState, structure Structure, 
 	return updated, nil
 }
 
-func copyState(state DocumentState) DocumentState {
-	copied := DocumentState{
+func copyState(state State) State {
+	copied := State{
 		Document: Document{
 			ID:     state.Document.ID,
 			Blocks: append([]Block(nil), state.Document.Blocks...),
@@ -132,61 +131,61 @@ func validateStructure(structure Structure, blockByID map[string]Block) (map[str
 	return sectionsByRole, nil
 }
 
-func validateLayout(layout Layout, sectionsByRole map[string]Section) error {
-	if len(layout.Order) == 0 {
-		return fmt.Errorf("layout order is empty")
+func validateTransform(transform Transform, sectionsByRole map[string]Section) error {
+	if len(transform.Order) == 0 {
+		return fmt.Errorf("transform order is empty")
 	}
 
 	seenRoles := map[string]bool{}
-	for _, role := range layout.Order {
+	for _, role := range transform.Order {
 		if role == "" {
-			return fmt.Errorf("layout order contains empty role")
+			return fmt.Errorf("transform order contains empty role")
 		}
 		if _, exists := sectionsByRole[role]; !exists {
-			return fmt.Errorf("layout order references unknown role %s", role)
+			return fmt.Errorf("transform order references unknown role %s", role)
 		}
 		if seenRoles[role] {
-			return fmt.Errorf("layout order contains duplicate role %s", role)
+			return fmt.Errorf("transform order contains duplicate role %s", role)
 		}
 		seenRoles[role] = true
 	}
 	for role := range sectionsByRole {
 		if !seenRoles[role] {
-			return fmt.Errorf("layout order omits role %s", role)
+			return fmt.Errorf("transform order omits role %s", role)
 		}
 	}
-	for _, replacement := range layout.TextReplacements {
-		if replacement.Role == "" {
-			return fmt.Errorf("text replacement contains empty role")
+	for _, edit := range transform.TextEdits {
+		if edit.Role == "" {
+			return fmt.Errorf("text edit contains empty role")
 		}
-		if replacement.Old == "" {
-			return fmt.Errorf("text replacement for role %s has empty old text", replacement.Role)
+		if edit.Old == "" {
+			return fmt.Errorf("text edit for role %s has empty old text", edit.Role)
 		}
-		if _, exists := sectionsByRole[replacement.Role]; !exists {
-			return fmt.Errorf("text replacement references unknown role %s", replacement.Role)
+		if _, exists := sectionsByRole[edit.Role]; !exists {
+			return fmt.Errorf("text edit references unknown role %s", edit.Role)
 		}
 	}
 	return nil
 }
 
-func applyRoleTextReplacement(blockByID map[string]Block, sectionsByRole map[string]Section, replacement TextReplacement) error {
-	section := sectionsByRole[replacement.Role]
+func applyRoleTextEdit(blockByID map[string]Block, sectionsByRole map[string]Section, edit TextEdit) error {
+	section := sectionsByRole[edit.Role]
 	for _, blockID := range section.BlockIDs {
 		block := blockByID[blockID]
-		if !strings.Contains(block.Text, replacement.Old) {
+		if !strings.Contains(block.Text, edit.Old) {
 			continue
 		}
-		updatedXML, err := replaceFirstTextInBlockXML(block.XML, replacement.Old, replacement.New)
+		updatedXML, err := ooxml.ReplaceFirstTextInBlockXML(block.XML, edit.Old, edit.New)
 		if err != nil {
 			return fmt.Errorf("replace text in %s: %w", blockID, err)
 		}
 		block.XML = updatedXML
-		block.Text = blockText([]byte(updatedXML))
-		block.DisplayText = strings.Replace(block.DisplayText, replacement.Old, replacement.New, 1)
+		block.Text = ooxml.BlockText(updatedXML)
+		block.DisplayText = strings.Replace(block.DisplayText, edit.Old, edit.New, 1)
 		blockByID[blockID] = block
 		return nil
 	}
-	return fmt.Errorf("text %q not found in role %s", replacement.Old, replacement.Role)
+	return fmt.Errorf("text %q not found in role %s", edit.Old, edit.Role)
 }
 
 func hasBlockType(blocks []Block, blockType BlockType) bool {
@@ -196,138 +195,4 @@ func hasBlockType(blocks []Block, blockType BlockType) bool {
 		}
 	}
 	return false
-}
-
-type textRange struct {
-	start int
-	end   int
-	text  string
-}
-
-func replaceFirstTextInBlockXML(blockXML string, oldText string, newText string) (string, error) {
-	ranges, fullText, err := textRangesInBlockXML(blockXML)
-	if err != nil {
-		return "", err
-	}
-	if len(ranges) == 0 {
-		return "", fmt.Errorf("block has no text nodes")
-	}
-
-	replaceStart := strings.Index(fullText, oldText)
-	if replaceStart == -1 {
-		return "", fmt.Errorf("text %q not found", oldText)
-	}
-	replaceEnd := replaceStart + len(oldText)
-
-	affectedStart := -1
-	affectedEnd := -1
-	cursor := 0
-	rangeStarts := make([]int, len(ranges))
-	rangeEnds := make([]int, len(ranges))
-	for i, textRange := range ranges {
-		rangeStarts[i] = cursor
-		cursor += len(textRange.text)
-		rangeEnds[i] = cursor
-		if rangeEnds[i] > replaceStart && rangeStarts[i] < replaceEnd {
-			if affectedStart == -1 {
-				affectedStart = i
-			}
-			affectedEnd = i
-		}
-	}
-	if affectedStart == -1 {
-		return "", fmt.Errorf("text %q did not overlap text nodes", oldText)
-	}
-
-	replacements := make(map[int]string)
-	first := ranges[affectedStart]
-	firstPrefix := first.text[:replaceStart-rangeStarts[affectedStart]]
-	if affectedStart == affectedEnd {
-		firstSuffix := first.text[replaceEnd-rangeStarts[affectedStart]:]
-		replacements[affectedStart] = firstPrefix + newText + firstSuffix
-	} else {
-		last := ranges[affectedEnd]
-		lastSuffix := last.text[replaceEnd-rangeStarts[affectedEnd]:]
-		replacements[affectedStart] = firstPrefix + newText
-		for i := affectedStart + 1; i < affectedEnd; i++ {
-			replacements[i] = ""
-		}
-		replacements[affectedEnd] = lastSuffix
-	}
-
-	updated := []byte(blockXML)
-	for i := len(ranges) - 1; i >= 0; i-- {
-		replacement, ok := replacements[i]
-		if !ok {
-			continue
-		}
-		escaped := escapeXMLText(replacement)
-		textRange := ranges[i]
-		updated = append(updated[:textRange.start], append([]byte(escaped), updated[textRange.end:]...)...)
-	}
-
-	return string(updated), nil
-}
-
-func textRangesInBlockXML(blockXML string) ([]textRange, string, error) {
-	data := []byte(blockXML)
-	decoder := xml.NewDecoder(bytes.NewReader(data))
-	var ranges []textRange
-	var fullText strings.Builder
-	textStart := -1
-
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("parse block xml: %w", err)
-		}
-
-		switch t := token.(type) {
-		case xml.StartElement:
-			if t.Name.Local == "t" {
-				textStart = int(decoder.InputOffset())
-			}
-		case xml.EndElement:
-			if t.Name.Local == "t" && textStart >= 0 {
-				textEnd := startTagOffset(data, int(decoder.InputOffset()))
-				raw := string(data[textStart:textEnd])
-				decoded := decodeXMLText(raw)
-				ranges = append(ranges, textRange{
-					start: textStart,
-					end:   textEnd,
-					text:  decoded,
-				})
-				fullText.WriteString(decoded)
-				textStart = -1
-			}
-		}
-	}
-
-	return ranges, fullText.String(), nil
-}
-
-func decodeXMLText(raw string) string {
-	decoder := xml.NewDecoder(strings.NewReader("<x>" + raw + "</x>"))
-	var builder strings.Builder
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			break
-		}
-		if charData, ok := token.(xml.CharData); ok {
-			builder.Write([]byte(charData))
-		}
-	}
-	return builder.String()
-}
-
-func escapeXMLText(text string) string {
-	var builder strings.Builder
-	if err := xml.EscapeText(&builder, []byte(text)); err != nil {
-		return text
-	}
-	return builder.String()
 }

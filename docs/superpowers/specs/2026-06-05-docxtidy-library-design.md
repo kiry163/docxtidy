@@ -43,27 +43,29 @@ Recommended package layout:
 ├── layout.go
 ├── types.go
 ├── repository.go
-├── cmd/docxtidy/
-└── examples/
+├── internal/ooxml/
+└── cmd/docxtidy/
 ```
 
-`docxtidy` is the public library package and the single implementation track. `cmd/docxtidy` wraps the public API for manual debugging and examples.
+`docxtidy` is the public library package. OOXML package parsing, document body parsing, display text generation, Markdown table projection, and XML text replacement live in `internal/ooxml` to keep implementation details out of the public module contract. `cmd/docxtidy` wraps the public API for manual debugging and examples.
 
 ## Core API
 
-The core API should operate directly on `DocumentState`. This keeps the library storage-agnostic and easy to test.
+The core API should operate directly on `State`. This keeps the library storage-agnostic and easy to test.
 
 ```go
-func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (DocumentState, error)
+func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (State, error)
 
-func ApplyLayout(ctx context.Context, state DocumentState, structure Structure, layout Layout) (DocumentState, error)
+func ViewOf(state State, opts ViewOptions) View
 
-func Validate(ctx context.Context, state DocumentState, structure Structure, layout Layout) error
+func Apply(ctx context.Context, state State, structure Structure, transform Transform) (State, error)
 
-func Write(ctx context.Context, state DocumentState, w io.Writer) error
+func Validate(ctx context.Context, state State, structure Structure, transform Transform) error
+
+func Write(ctx context.Context, state State, w io.Writer) error
 ```
 
-`Extract` reads and unpacks a DOCX into a re-buildable state. `ApplyLayout` returns a new state rather than mutating the input. `Validate` exposes safety checks without rebuilding. `Write` emits the final DOCX.
+`Extract` reads and unpacks a DOCX into a re-buildable state. `ViewOf` returns a lightweight, reader-oriented projection for user review or external structure recognition. `Apply` returns a new state rather than mutating the input. `Validate` exposes safety checks without rebuilding. `Write` emits the final DOCX to an `io.Writer`.
 
 ## Optional Repository Interface
 
@@ -71,8 +73,8 @@ DocxTidy should define a high-level repository interface for users who want pers
 
 ```go
 type Repository interface {
-    Save(ctx context.Context, docID string, state DocumentState) error
-    Load(ctx context.Context, docID string) (DocumentState, error)
+    Save(ctx context.Context, docID string, state State) error
+    Load(ctx context.Context, docID string) (State, error)
     Delete(ctx context.Context, docID string) error
 }
 ```
@@ -82,7 +84,7 @@ The repository stores a whole DocxTidy intermediate state. Users can implement l
 ## Data Model
 
 ```go
-type DocumentState struct {
+type State struct {
     Document Document
     Files    []PackageFile
 }
@@ -124,19 +126,43 @@ type Section struct {
     BlockIDs []string
 }
 
-type Layout struct {
-    Order            []string
-    TextReplacements []TextReplacement
+type ViewOptions struct {
+    TextMode ViewTextMode
 }
 
-type TextReplacement struct {
+type ViewTextMode string
+
+const (
+    ViewTextModeDisplay ViewTextMode = "display"
+    ViewTextModeSource  ViewTextMode = "source"
+)
+
+type View struct {
+    DocumentID string
+    Blocks []ViewBlock
+}
+
+type ViewBlock struct {
+    ID          string
+    Index       int
+    Type        BlockType
+    Text        string
+    Protected   bool
+}
+
+type Transform struct {
+    Order            []string
+    TextEdits        []TextEdit
+}
+
+type TextEdit struct {
     Role string
     Old  string
     New  string
 }
 ```
 
-`Text` is the text physically present in OOXML text nodes. `DisplayText` is a best-effort reader-oriented string that may include computed numbering labels. Mutation should target `Text` and raw XML, not `DisplayText`.
+`Block.Text` is the text physically present in OOXML text nodes. `Block.DisplayText` is a best-effort reader-oriented string that may include computed numbering labels and Markdown image placeholders such as `![图片 1](media:rId5)`. Image-only paragraphs therefore keep `Text` empty while `DisplayText` shows the placeholder. `Block.Type` reflects the OOXML body container, so a paragraph containing a drawing remains a paragraph. `ViewBlock.Text` uses display text by default and does not expose numbering internals. In display mode, table blocks are projected as best-effort Markdown tables for readability, including image placeholders inside table cells; source mode keeps the original extracted text. Set `ViewOptions.TextMode` to `ViewTextModeSource` when callers need source text instead. Mutation should target source blocks and raw XML, not the view.
 
 ## Numbering
 
@@ -150,13 +176,13 @@ Automatic numbering is layout-sensitive. Moving numbered blocks may change displ
 
 ## Safety Rules
 
-Layout application must fail when:
+Transform application must fail when:
 
 - A structure section references an unknown block ID.
 - A block appears in more than one section.
 - A block from the source document is missing.
-- Layout order references an unknown role.
-- Layout order omits a role present in the structure.
+- Transform order references an unknown role.
+- Transform order omits a role present in the structure.
 - A protected block would be dropped or moved into an invalid location.
 - A text replacement cannot find its target text inside the target role.
 
@@ -168,7 +194,8 @@ The CLI remains useful but secondary:
 
 ```bash
 docxtidy extract input.docx --out state.json
-docxtidy apply-layout state.json --structure structure.json --layout layout.json --out new-state.json
+docxtidy view state.json --out view.json
+docxtidy apply state.json --structure structure.json --transform transform.json --out new-state.json
 docxtidy write new-state.json --out output.docx
 ```
 
@@ -183,14 +210,14 @@ The prototype has been migrated to the library-first shape:
 - The old path-based `internal/docxrt` prototype has been removed.
 - Core operations use reader/state/writer APIs.
 - `cmd/docxtidy` is a thin wrapper around the public API.
-- API-level tests cover `Extract`, `ApplyLayout`, numbering metadata, and `Write`; CLI tests cover the state JSON workflow.
+- API-level tests cover `Extract`, `ViewOf`, `Apply`, numbering metadata, and `Write`; CLI tests cover the state/view/transform JSON workflow.
 
 ## V1 Decisions
 
-- `DocumentState.Files []PackageFile` is acceptable for v1. Streaming state can be added later if large files become a practical bottleneck.
+- `State.Files []PackageFile` is acceptable for v1. Streaming state can be added later if large files become a practical bottleneck.
 - V1 defines the `Repository` interface but does not need built-in repository implementations beyond tests or examples.
 - V1 numbering should expose direct paragraph numbering metadata and compute simple labels when possible. Full Word/WPS rendering parity is out of scope.
 
 ## Notes
 
-This workspace is not a git repository, so this design document cannot be committed here.
+Tests should generate minimal DOCX fixtures at runtime. The repository should not commit Word files or require Word files as test inputs.
