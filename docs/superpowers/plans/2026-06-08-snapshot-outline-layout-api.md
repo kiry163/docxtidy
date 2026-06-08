@@ -37,14 +37,11 @@ Update existing tests in `docxtidy_test.go` to use the new names:
 
 ```go
 func TestExtractReturnsSnapshotFromReader(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	if snapshot.Document.ID != "sample" {
-		t.Fatalf("document id = %q, want sample", snapshot.Document.ID)
-	}
 	if len(snapshot.Package.Parts) == 0 {
 		t.Fatal("snapshot has no package parts")
 	}
@@ -67,15 +64,12 @@ Rename `TestViewOfReturnsLightweightDocumentView` to:
 
 ```go
 func TestOutlineOfReturnsLightweightDocumentOutline(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	outline := OutlineOf(snapshot, OutlineOptions{})
-	if outline.DocumentID != "sample" {
-		t.Fatalf("outline document id = %q, want sample", outline.DocumentID)
-	}
+	outline := OutlineOf(snapshot)
 	if len(outline.Blocks) == 0 {
 		t.Fatal("outline has no blocks")
 	}
@@ -106,17 +100,13 @@ Run:
 go test ./...
 ```
 
-Expected: FAIL with missing identifiers such as `Snapshot`, `OutlineOf`, `OutlineOptions`, or `Package`.
+Expected: FAIL with missing identifiers such as `Snapshot`, `OutlineOf`, or `Package`.
 
 - [ ] **Step 3: Update public type names in `types.go`**
 
 Replace the old top-level public types with:
 
 ```go
-type ExtractOptions struct {
-	DocumentID string `json:"document_id,omitempty"`
-}
-
 type Snapshot struct {
 	Document DocumentSnapshot `json:"document"`
 	Package  PackageSnapshot  `json:"package"`
@@ -132,7 +122,6 @@ type PackagePart struct {
 }
 
 type DocumentSnapshot struct {
-	ID     string          `json:"id,omitempty"`
 	Blocks []SnapshotBlock `json:"blocks"`
 }
 
@@ -153,11 +142,8 @@ const (
 	BlockTypeSection   BlockType = "sectPr"
 )
 
-type OutlineOptions struct{}
-
 type Outline struct {
-	DocumentID string         `json:"document_id,omitempty"`
-	Blocks     []OutlineBlock `json:"blocks"`
+	Blocks []OutlineBlock `json:"blocks"`
 }
 
 type OutlineBlock struct {
@@ -176,7 +162,7 @@ Do not keep exported `State`, `Document`, `Block`, `PackageFile`, `View`, `ViewB
 Change signatures:
 
 ```go
-func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (Snapshot, error)
+func Extract(ctx context.Context, r io.Reader) (Snapshot, error)
 func Write(ctx context.Context, snapshot Snapshot, w io.Writer) error
 ```
 
@@ -185,7 +171,6 @@ Build `Snapshot` from OOXML:
 ```go
 return Snapshot{
 	Document: DocumentSnapshot{
-		ID:     opts.DocumentID,
 		Blocks: blocksFromOOXML(rawState.Blocks),
 	},
 	Package: PackageSnapshot{
@@ -216,7 +201,7 @@ Convert back to `ooxml.Block` with `Numbering: nil`; write-back depends on XML, 
 Rename `ViewOf` to:
 
 ```go
-func OutlineOf(snapshot Snapshot, opts OutlineOptions) Outline
+func OutlineOf(snapshot Snapshot) Outline
 ```
 
 Use `snapshot.Document.Blocks`. Implement `outlineBlockText(block SnapshotBlock) string` using existing display behavior:
@@ -256,7 +241,7 @@ Replace the old `TestApplyReturnsNewStateAndPreservesInput` with:
 
 ```go
 func TestApplyReturnsNewSnapshotFromLayoutAndPreservesInput(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -326,7 +311,7 @@ Add tests:
 
 ```go
 func TestApplyRejectsMissingBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -339,7 +324,7 @@ func TestApplyRejectsMissingBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsDuplicateBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -352,7 +337,7 @@ func TestApplyRejectsDuplicateBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsUnknownBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -365,7 +350,7 @@ func TestApplyRejectsUnknownBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsEmptyLayoutGroup(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -378,7 +363,7 @@ func TestApplyRejectsEmptyLayoutGroup(t *testing.T) {
 }
 
 func TestApplyRejectsProtectedBlockEdit(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -391,7 +376,7 @@ func TestApplyRejectsProtectedBlockEdit(t *testing.T) {
 }
 
 func TestApplyRejectsMissingReplacement(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -653,7 +638,7 @@ if err := readJSON(snapshotPath, &snapshot); err != nil {
 	return fmt.Errorf("read snapshot: %w", err)
 }
 
-outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+outline := docxtidy.OutlineOf(snapshot)
 ```
 
 Update `runApply`:
@@ -712,11 +697,10 @@ rg -n '^type [A-Z]|^func [A-Z]|^const \(' *.go
 Expected exported concepts are limited to:
 
 - `Extract`, `OutlineOf`, `Apply`, `Validate`, `Write`
-- `ExtractOptions`
 - `Snapshot`, `DocumentSnapshot`, `SnapshotBlock`
 - `PackageSnapshot`, `PackagePart`
 - `BlockType` and its constants
-- `OutlineOptions`, `Outline`, `OutlineBlock`
+- `Outline`, `OutlineBlock`
 - `Layout`, `Group`, `Edit`, `TextReplacement`
 
 No `State`, `View`, `Structure`, `Transform`, `Section`, `TextEdit`, `Repository`, `NumberingInfo`, or `NumberingKind`.
@@ -726,14 +710,12 @@ No `State`, `View`, `Structure`, `Transform`, `Section`, `TextEdit`, `Repository
 Replace the library usage example with:
 
 ```go
-snapshot, err := docxtidy.Extract(ctx, input, docxtidy.ExtractOptions{
-	DocumentID: "example",
-})
+snapshot, err := docxtidy.Extract(ctx, input)
 if err != nil {
 	panic(err)
 }
 
-outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+outline := docxtidy.OutlineOf(snapshot)
 _ = outline
 
 layout := docxtidy.Layout{

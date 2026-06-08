@@ -10,14 +10,11 @@ import (
 )
 
 func TestExtractReturnsSnapshotFromReader(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	if snapshot.Document.ID != "sample" {
-		t.Fatalf("document id = %q, want sample", snapshot.Document.ID)
-	}
 	if len(snapshot.Package.Parts) == 0 {
 		t.Fatal("snapshot has no package parts")
 	}
@@ -36,7 +33,7 @@ func TestExtractReturnsSnapshotFromReader(t *testing.T) {
 }
 
 func TestWriteRoundTripsExtractedSnapshot(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -64,7 +61,7 @@ func TestWriteRoundTripsExtractedSnapshot(t *testing.T) {
 }
 
 func TestApplyReturnsNewSnapshotFromLayoutAndPreservesInput(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -104,7 +101,7 @@ func TestApplyReturnsNewSnapshotFromLayoutAndPreservesInput(t *testing.T) {
 }
 
 func TestApplyRejectsMissingBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -117,7 +114,7 @@ func TestApplyRejectsMissingBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsDuplicateBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -130,7 +127,7 @@ func TestApplyRejectsDuplicateBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsUnknownBlockInLayout(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -143,7 +140,7 @@ func TestApplyRejectsUnknownBlockInLayout(t *testing.T) {
 }
 
 func TestApplyRejectsEmptyLayoutGroup(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -156,7 +153,7 @@ func TestApplyRejectsEmptyLayoutGroup(t *testing.T) {
 }
 
 func TestApplyRejectsProtectedBlockEdit(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -169,7 +166,7 @@ func TestApplyRejectsProtectedBlockEdit(t *testing.T) {
 }
 
 func TestApplyRejectsMissingReplacement(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -182,7 +179,7 @@ func TestApplyRejectsMissingReplacement(t *testing.T) {
 }
 
 func TestApplyRejectsMissingOldText(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -195,7 +192,7 @@ func TestApplyRejectsMissingOldText(t *testing.T) {
 }
 
 func TestExtractAddsAutomaticNumberingToDisplayText(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -219,7 +216,7 @@ func TestExtractUsesNumberingLevelStartValues(t *testing.T) {
 		`<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>` +
 		`</w:numbering>`
 
-	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentAndNumberingXML(t, documentXML, numberingXML)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentAndNumberingXML(t, documentXML, numberingXML)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -259,7 +256,7 @@ func TestBodyBlocksDisplayTextUsesImagePlaceholder(t *testing.T) {
   </w:body>
 </w:document>`)
 
-	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -299,7 +296,7 @@ func TestBodyBlocksDisplayTextCombinesTextAndImagePlaceholder(t *testing.T) {
   </w:body>
 </w:document>`)
 
-	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))), ExtractOptions{})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, string(documentXML))))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -313,16 +310,13 @@ func TestBodyBlocksDisplayTextCombinesTextAndImagePlaceholder(t *testing.T) {
 }
 
 func TestOutlineOfReturnsLightweightDocumentOutline(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
-	outline := OutlineOf(snapshot, OutlineOptions{})
+	outline := OutlineOf(snapshot)
 
-	if outline.DocumentID != "sample" {
-		t.Fatalf("outline document id = %q, want sample", outline.DocumentID)
-	}
 	if len(outline.Blocks) != len(snapshot.Document.Blocks) {
 		t.Fatalf("outline blocks = %d, want %d", len(outline.Blocks), len(snapshot.Document.Blocks))
 	}
@@ -343,13 +337,13 @@ func TestOutlineOfReturnsLightweightDocumentOutline(t *testing.T) {
 }
 
 func TestOutlineOfDisplaysTablesAsMarkdown(t *testing.T) {
-	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)), ExtractOptions{DocumentID: "sample"})
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
 
 	tableIndex := firstBlockIndexByTypeForTest(t, snapshot, BlockTypeTable)
-	outline := OutlineOf(snapshot, OutlineOptions{})
+	outline := OutlineOf(snapshot)
 
 	displayText := outline.Blocks[tableIndex].Text
 	if !strings.Contains(displayText, "| 问题类型 | 具体表现 | 影响程度 |") {
@@ -366,7 +360,6 @@ func TestOutlineOfDisplaysTablesAsMarkdown(t *testing.T) {
 func TestOutlineOfDisplaysTableImagesAsMarkdownPlaceholders(t *testing.T) {
 	snapshot := Snapshot{
 		Document: DocumentSnapshot{
-			ID: "sample",
 			Blocks: []SnapshotBlock{
 				{
 					ID:   "block-0001",
@@ -388,7 +381,7 @@ func TestOutlineOfDisplaysTableImagesAsMarkdownPlaceholders(t *testing.T) {
 		},
 	}
 
-	outline := OutlineOf(snapshot, OutlineOptions{})
+	outline := OutlineOf(snapshot)
 	tableText := outline.Blocks[0].Text
 	if !strings.Contains(tableText, "| 图片 |") {
 		t.Fatalf("table text = %q, want markdown header", tableText)

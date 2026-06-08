@@ -7,7 +7,7 @@ import (
 	"github.com/kiry163/docxtidy/internal/ooxml"
 )
 
-func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (Snapshot, error) {
+func Extract(ctx context.Context, r io.Reader) (Snapshot, error) {
 	rawState, err := ooxml.Extract(ctx, r)
 	if err != nil {
 		return Snapshot{}, err
@@ -15,7 +15,6 @@ func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (Snapshot, e
 
 	return Snapshot{
 		Document: DocumentSnapshot{
-			ID:     opts.DocumentID,
 			Blocks: blocksFromOOXML(rawState.Blocks),
 		},
 		Package: PackageSnapshot{

@@ -34,12 +34,12 @@ These names define the mental model:
 The primary usage should read as:
 
 ```go
-snapshot, err := docxtidy.Extract(ctx, input, docxtidy.ExtractOptions{})
+snapshot, err := docxtidy.Extract(ctx, input)
 if err != nil {
     return err
 }
 
-outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+outline := docxtidy.OutlineOf(snapshot)
 
 layout := docxtidy.Layout{
     Groups: []docxtidy.Group{
@@ -72,8 +72,8 @@ if err := docxtidy.Write(ctx, updated, output); err != nil {
 The root package should expose only concepts needed for the workflow.
 
 ```go
-func Extract(ctx context.Context, r io.Reader, opts ExtractOptions) (Snapshot, error)
-func OutlineOf(snapshot Snapshot, opts OutlineOptions) Outline
+func Extract(ctx context.Context, r io.Reader) (Snapshot, error)
+func OutlineOf(snapshot Snapshot) Outline
 func Apply(ctx context.Context, snapshot Snapshot, layout Layout) (Snapshot, error)
 func Validate(ctx context.Context, snapshot Snapshot, layout Layout) error
 func Write(ctx context.Context, snapshot Snapshot, w io.Writer) error
@@ -82,17 +82,12 @@ func Write(ctx context.Context, snapshot Snapshot, w io.Writer) error
 Core data types:
 
 ```go
-type ExtractOptions struct {
-    DocumentID string `json:"document_id,omitempty"`
-}
-
 type Snapshot struct {
     Document DocumentSnapshot `json:"document"`
     Package  PackageSnapshot  `json:"package"`
 }
 
 type DocumentSnapshot struct {
-    ID     string          `json:"id,omitempty"`
     Blocks []SnapshotBlock `json:"blocks"`
 }
 
@@ -114,11 +109,8 @@ type PackagePart struct {
     Data []byte `json:"data"`
 }
 
-type OutlineOptions struct{}
-
 type Outline struct {
-    DocumentID string         `json:"document_id,omitempty"`
-    Blocks     []OutlineBlock `json:"blocks"`
+    Blocks []OutlineBlock `json:"blocks"`
 }
 
 type OutlineBlock struct {
@@ -165,7 +157,7 @@ Remove these from the root public API:
 - `Structure`, `Section`, `Transform`, and role-based text edits: replace them
   with `Layout`, `Group`, and block-targeted edits.
 - `View`, `ViewBlock`, `ViewOptions`, and `ViewTextMode`: replace them with
-  `Outline`, `OutlineBlock`, and `OutlineOptions`.
+  `Outline` and `OutlineBlock`.
 
 ## Layout Semantics
 

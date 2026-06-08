@@ -50,6 +50,9 @@ func TestCLIExtractWritesReadableXMLInJSON(t *testing.T) {
 	if strings.Contains(jsonText, `\u003c`) || strings.Contains(jsonText, `\u003e`) {
 		t.Fatalf("snapshot json contains HTML-escaped XML")
 	}
+	if strings.Contains(jsonText, `"document_id"`) {
+		t.Fatalf("snapshot json contains document_id")
+	}
 }
 
 func TestCLIOutlineWritesDocumentOutline(t *testing.T) {
@@ -71,6 +74,13 @@ func TestCLIOutlineWritesDocumentOutline(t *testing.T) {
 	}
 	if outline.Blocks[0].ID == "" {
 		t.Fatal("first outline block id is empty")
+	}
+	data, err := os.ReadFile(outlinePath)
+	if err != nil {
+		t.Fatalf("read outline json: %v", err)
+	}
+	if strings.Contains(string(data), `"document_id"`) {
+		t.Fatalf("outline json contains document_id")
 	}
 }
 

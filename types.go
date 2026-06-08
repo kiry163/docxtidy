@@ -1,9 +1,5 @@
 package docxtidy
 
-type ExtractOptions struct {
-	DocumentID string `json:"document_id,omitempty"`
-}
-
 type Snapshot struct {
 	Document DocumentSnapshot `json:"document"`
 	Package  PackageSnapshot  `json:"package"`
@@ -19,7 +15,6 @@ type PackagePart struct {
 }
 
 type DocumentSnapshot struct {
-	ID     string          `json:"id,omitempty"`
 	Blocks []SnapshotBlock `json:"blocks"`
 }
 
@@ -40,11 +35,8 @@ const (
 	BlockTypeSection   BlockType = "sectPr"
 )
 
-type OutlineOptions struct{}
-
 type Outline struct {
-	DocumentID string         `json:"document_id,omitempty"`
-	Blocks     []OutlineBlock `json:"blocks"`
+	Blocks []OutlineBlock `json:"blocks"`
 }
 
 type OutlineBlock struct {

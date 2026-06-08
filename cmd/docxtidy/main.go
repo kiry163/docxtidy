@@ -56,7 +56,7 @@ func runExtract(args []string) error {
 	}
 	defer input.Close()
 
-	snapshot, err := docxtidy.Extract(context.Background(), input, docxtidy.ExtractOptions{})
+	snapshot, err := docxtidy.Extract(context.Background(), input)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func runOutline(args []string) error {
 		return fmt.Errorf("read snapshot: %w", err)
 	}
 
-	outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+	outline := docxtidy.OutlineOf(snapshot)
 	if err := writeJSON(outPath, outline); err != nil {
 		return err
 	}

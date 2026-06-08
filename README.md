@@ -51,14 +51,12 @@ func main() {
 	}
 	defer input.Close()
 
-	snapshot, err := docxtidy.Extract(ctx, input, docxtidy.ExtractOptions{
-		DocumentID: "example",
-	})
+	snapshot, err := docxtidy.Extract(ctx, input)
 	if err != nil {
 		panic(err)
 	}
 
-	outline := docxtidy.OutlineOf(snapshot, docxtidy.OutlineOptions{})
+	outline := docxtidy.OutlineOf(snapshot)
 	_ = outline
 
 	layout := docxtidy.Layout{

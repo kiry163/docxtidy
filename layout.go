@@ -58,7 +58,6 @@ func Apply(ctx context.Context, snapshot Snapshot, layout Layout) (Snapshot, err
 func copySnapshot(snapshot Snapshot) Snapshot {
 	copied := Snapshot{
 		Document: DocumentSnapshot{
-			ID:     snapshot.Document.ID,
 			Blocks: append([]SnapshotBlock(nil), snapshot.Document.Blocks...),
 		},
 		Package: PackageSnapshot{

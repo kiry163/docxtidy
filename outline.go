@@ -2,9 +2,7 @@ package docxtidy
 
 import "github.com/kiry163/docxtidy/internal/ooxml"
 
-func OutlineOf(snapshot Snapshot, opts OutlineOptions) Outline {
-	_ = opts
-
+func OutlineOf(snapshot Snapshot) Outline {
 	blocks := make([]OutlineBlock, 0, len(snapshot.Document.Blocks))
 	for index, block := range snapshot.Document.Blocks {
 		blocks = append(blocks, OutlineBlock{
@@ -17,8 +15,7 @@ func OutlineOf(snapshot Snapshot, opts OutlineOptions) Outline {
 	}
 
 	return Outline{
-		DocumentID: snapshot.Document.ID,
-		Blocks:     blocks,
+		Blocks: blocks,
 	}
 }
 
