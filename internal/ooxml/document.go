@@ -61,7 +61,7 @@ func bodyBlocks(documentXML []byte, numberingDefinitions numberingDefinitions) (
 				numbering := numberingState.numberingInfoForBlock(raw)
 				displayText := DisplayTextFromBlockXML(raw, text)
 				if numbering != nil && numbering.ComputedLabel != "" {
-					displayText = numbering.ComputedLabel + " " + displayText
+					displayText = numbering.ComputedLabel + displayText
 				}
 				blocks = append(blocks, Block{
 					ID:          fmt.Sprintf("block-%04d", len(blocks)+1),

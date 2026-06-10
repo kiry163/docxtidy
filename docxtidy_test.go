@@ -232,11 +232,40 @@ func TestApplyAutomaticNumberingTextMaterializesNumberedParagraphs(t *testing.T)
 	if strings.Contains(block.XML, "<w:ind") {
 		t.Fatalf("block xml = %s, want paragraph indentation removed", block.XML)
 	}
-	if block.Text != "1.2 编号段落" {
+	if block.Text != "1.2编号段落" {
 		t.Fatalf("block text = %q, want automatic numbering materialized", block.Text)
 	}
 	if block.DisplayText != block.Text {
 		t.Fatalf("display text = %q, want %q", block.DisplayText, block.Text)
+	}
+}
+
+func TestApplyAutomaticNumberingTextNormalizesNumberingSeparator(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	for i, block := range snapshot.Document.Blocks {
+		if block.ID != "block-0016" {
+			continue
+		}
+		block.Text = " 编号段落"
+		block.DisplayText = "1.2  编号段落"
+		block.XML = strings.Replace(block.XML, ">编号段落<", "> 编号段落<", 1)
+		snapshot.Document.Blocks[i] = block
+		break
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.AutomaticNumbering = AutomaticNumberingText
+
+	updated, err := Apply(context.Background(), snapshot, layout)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, updated, "block-0016")
+	if block.Text != "1.2编号段落" {
+		t.Fatalf("block text = %q, want no inserted separator", block.Text)
 	}
 }
 
@@ -359,8 +388,8 @@ func TestExtractAddsAutomaticNumberingToDisplayText(t *testing.T) {
 	}
 
 	block := blockByIDForTest(t, snapshot, "block-0016")
-	if !strings.HasPrefix(block.DisplayText, "1.2 ") {
-		t.Fatalf("display text = %q, want 1.2 prefix", block.DisplayText)
+	if block.DisplayText != "1.2编号段落" {
+		t.Fatalf("display text = %q, want numbering prefix without inserted space", block.DisplayText)
 	}
 }
 
@@ -383,7 +412,7 @@ func TestExtractUsesNumberingLevelStartValues(t *testing.T) {
 	}
 
 	block := blockByIDForTest(t, snapshot, "block-0001")
-	if block.DisplayText != "3.4 支撑保障" {
+	if block.DisplayText != "3.4支撑保障" {
 		t.Fatalf("display text = %q, want 3.4 prefix", block.DisplayText)
 	}
 }
@@ -492,8 +521,8 @@ func TestOutlineOfReturnsLightweightDocumentOutline(t *testing.T) {
 		t.Fatalf("first outline block text = %q, want %q", first.Text, snapshot.Document.Blocks[0].DisplayText)
 	}
 	numbered := outlineBlockByIDForTest(t, outline, "block-0016")
-	if !strings.HasPrefix(numbered.Text, "1.2 ") {
-		t.Fatalf("numbered outline text = %q, want 1.2 prefix", numbered.Text)
+	if numbered.Text != "1.2编号段落" {
+		t.Fatalf("numbered outline text = %q, want numbering prefix without inserted space", numbered.Text)
 	}
 }
 

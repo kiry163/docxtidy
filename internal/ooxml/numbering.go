@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 )
 
 type numberingDefinitions struct {
@@ -216,8 +217,9 @@ func MaterializeAutomaticNumberingParagraphXML(blockXML string, prefix string) (
 	updated := removeElementByLocalName(blockXML, "numPr")
 	updated = removeElementByLocalName(updated, "pStyle")
 	updated = removeElementByLocalName(updated, "ind")
+	updated = trimLeadingTextInBlockXML(updated)
 
-	prefixRun := `<w:r>` + manualNumberingTextXML(prefix) + `</w:r>`
+	prefixRun := `<w:r>` + manualNumberingTextXML(normalizeAutomaticNumberingPrefix(prefix)) + `</w:r>`
 	if pPrEnd := strings.Index(updated, "</w:pPr>"); pPrEnd != -1 {
 		pPrEnd += len("</w:pPr>")
 		return updated[:pPrEnd] + prefixRun + updated[pPrEnd:], nil
@@ -263,6 +265,24 @@ func manualNumberingTextXML(text string) string {
 		space = ` xml:space="preserve"`
 	}
 	return `<w:t` + space + `>` + escapeXMLText(text) + `</w:t>`
+}
+
+func normalizeAutomaticNumberingPrefix(prefix string) string {
+	return strings.TrimRightFunc(prefix, unicode.IsSpace)
+}
+
+func trimLeadingTextInBlockXML(blockXML string) string {
+	ranges, _, err := textRangesInBlockXML(blockXML)
+	if err != nil || len(ranges) == 0 {
+		return blockXML
+	}
+	first := ranges[0]
+	trimmed := strings.TrimLeftFunc(first.text, unicode.IsSpace)
+	if trimmed == first.text {
+		return blockXML
+	}
+	escaped := escapeXMLText(trimmed)
+	return blockXML[:first.start] + escaped + blockXML[first.end:]
 }
 
 func removeElementByLocalName(xmlText string, localName string) string {
