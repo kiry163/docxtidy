@@ -48,9 +48,17 @@ type OutlineBlock struct {
 }
 
 type Layout struct {
-	Groups []Group `json:"groups"`
-	Edits  []Edit  `json:"edits,omitempty"`
+	Groups             []Group                  `json:"groups"`
+	Edits              []Edit                   `json:"edits,omitempty"`
+	AutomaticNumbering AutomaticNumberingPolicy `json:"automatic_numbering,omitempty"`
 }
+
+type AutomaticNumberingPolicy string
+
+const (
+	AutomaticNumberingPreserve AutomaticNumberingPolicy = "preserve"
+	AutomaticNumberingText     AutomaticNumberingPolicy = "text"
+)
 
 type Group struct {
 	BlockIDs []string `json:"block_ids"`

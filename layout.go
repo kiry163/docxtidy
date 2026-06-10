@@ -36,6 +36,11 @@ func Apply(ctx context.Context, snapshot Snapshot, layout Layout) (Snapshot, err
 			return Snapshot{}, err
 		}
 	}
+	if layout.AutomaticNumbering == AutomaticNumberingText {
+		if err := materializeAutomaticNumbering(blockByID); err != nil {
+			return Snapshot{}, err
+		}
+	}
 
 	rebuiltBlocks := make([]SnapshotBlock, 0, len(snapshot.Document.Blocks))
 	for _, group := range layout.Groups {
@@ -87,6 +92,11 @@ func blockMap(blocks []SnapshotBlock) (map[string]SnapshotBlock, error) {
 func validateLayout(layout Layout, blockByID map[string]SnapshotBlock) error {
 	if len(layout.Groups) == 0 {
 		return fmt.Errorf("layout has no groups")
+	}
+	switch layout.AutomaticNumbering {
+	case "", AutomaticNumberingPreserve, AutomaticNumberingText:
+	default:
+		return fmt.Errorf("unknown automatic numbering policy %q", layout.AutomaticNumbering)
 	}
 	seenBlockIDs := map[string]bool{}
 	for groupIndex, group := range layout.Groups {
@@ -194,6 +204,41 @@ func applyManualNumberingEdit(blockByID map[string]SnapshotBlock, edit Edit) err
 	block.DisplayText = block.Text
 	blockByID[edit.BlockID] = block
 	return nil
+}
+
+func materializeAutomaticNumbering(blockByID map[string]SnapshotBlock) error {
+	for blockID, block := range blockByID {
+		if block.Type != BlockTypeParagraph || !ooxml.HasParagraphNumbering(block.XML) {
+			continue
+		}
+		prefix, ok := automaticNumberingPrefix(block)
+		if !ok {
+			return fmt.Errorf("cannot materialize automatic numbering for block %s", blockID)
+		}
+		updatedXML, err := ooxml.MaterializeAutomaticNumberingParagraphXML(block.XML, prefix)
+		if err != nil {
+			return fmt.Errorf("materialize automatic numbering for block %s: %w", blockID, err)
+		}
+		block.XML = updatedXML
+		block.Text = ooxml.BlockText(updatedXML)
+		block.DisplayText = block.Text
+		blockByID[blockID] = block
+	}
+	return nil
+}
+
+func automaticNumberingPrefix(block SnapshotBlock) (string, bool) {
+	if block.DisplayText == "" {
+		return "", false
+	}
+	if block.Text == "" {
+		return block.DisplayText, true
+	}
+	if !strings.HasSuffix(block.DisplayText, block.Text) {
+		return "", false
+	}
+	prefix := strings.TrimSuffix(block.DisplayText, block.Text)
+	return prefix, prefix != ""
 }
 
 func hasBlockType(blocks []SnapshotBlock, blockType BlockType) bool {

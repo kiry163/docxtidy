@@ -103,7 +103,15 @@ if err := docxtidy.Write(ctx, updated, output); err != nil {
 
 `Layout` 不包含业务角色语义。库只关心 block id 的新顺序和明确编辑；所有块必须且只能出现一次，遗漏或重复都会报错。
 
-默认行为会保留原 DOCX 自动编号。如果调用方希望把某个自动编号段落改成手写编号，使用 `ManualNumberingEdit`，并传入最终完整文本：
+默认行为会保留原 DOCX 自动编号。如果调用方希望把文档中仍然存在的自动编号统一转成普通文本，可以设置 `AutomaticNumberingText`：
+
+```go
+layout.AutomaticNumbering = docxtidy.AutomaticNumberingText
+```
+
+该模式会把当前可见的自动编号前缀写入段落文本，并移除 DOCX 自动编号属性、段落样式引用和缩进。它只处理自动编号，不处理 Word 的 `REF`、目录、页码等字段。显式 `ManualNumberingEdit` 的优先级更高；已经由调用方手写的段落不会再被全局自动编号转换重复处理。
+
+如果调用方希望把某个自动编号段落改成指定的手写编号，使用 `ManualNumberingEdit`，并传入最终完整文本：
 
 ```go
 layout.Edits = []docxtidy.Edit{

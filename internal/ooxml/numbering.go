@@ -203,6 +203,33 @@ func computeNumberingLabel(levelText string, counters []int) string {
 	return label
 }
 
+func HasParagraphNumbering(blockXML string) bool {
+	return strings.Contains(blockXML, "<w:numPr>")
+}
+
+func MaterializeAutomaticNumberingParagraphXML(blockXML string, prefix string) (string, error) {
+	startTagEnd := strings.Index(blockXML, ">")
+	if startTagEnd == -1 || !strings.HasPrefix(blockXML, "<w:p") {
+		return "", fmt.Errorf("automatic numbering materialization requires paragraph XML")
+	}
+
+	updated := removeElementByLocalName(blockXML, "numPr")
+	updated = removeElementByLocalName(updated, "pStyle")
+	updated = removeElementByLocalName(updated, "ind")
+
+	prefixRun := `<w:r>` + manualNumberingTextXML(prefix) + `</w:r>`
+	if pPrEnd := strings.Index(updated, "</w:pPr>"); pPrEnd != -1 {
+		pPrEnd += len("</w:pPr>")
+		return updated[:pPrEnd] + prefixRun + updated[pPrEnd:], nil
+	}
+
+	startTagEnd = strings.Index(updated, ">")
+	if startTagEnd == -1 {
+		return "", fmt.Errorf("automatic numbering materialization requires paragraph XML")
+	}
+	return updated[:startTagEnd+1] + prefixRun + updated[startTagEnd+1:], nil
+}
+
 func RebuildManualNumberingParagraphXML(blockXML string, text string, style string) (string, error) {
 	startTagEnd := strings.Index(blockXML, ">")
 	if startTagEnd == -1 || !strings.HasPrefix(blockXML, "<w:p") {
@@ -236,6 +263,31 @@ func manualNumberingTextXML(text string) string {
 		space = ` xml:space="preserve"`
 	}
 	return `<w:t` + space + `>` + escapeXMLText(text) + `</w:t>`
+}
+
+func removeElementByLocalName(xmlText string, localName string) string {
+	for {
+		start := strings.Index(xmlText, "<w:"+localName)
+		if start == -1 {
+			return xmlText
+		}
+		startTagEnd := strings.Index(xmlText[start:], ">")
+		if startTagEnd == -1 {
+			return xmlText
+		}
+		startTagEnd += start
+		if xmlText[startTagEnd-1] == '/' {
+			xmlText = xmlText[:start] + xmlText[startTagEnd+1:]
+			continue
+		}
+		endTag := "</w:" + localName + ">"
+		end := strings.Index(xmlText[startTagEnd+1:], endTag)
+		if end == -1 {
+			return xmlText
+		}
+		end += startTagEnd + 1 + len(endTag)
+		xmlText = xmlText[:start] + xmlText[end:]
+	}
 }
 
 func attrValue(element xml.StartElement, local string) string {

@@ -209,6 +209,78 @@ func TestApplyPreservesAutomaticNumberingByDefault(t *testing.T) {
 	}
 }
 
+func TestApplyAutomaticNumberingTextMaterializesNumberedParagraphs(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.AutomaticNumbering = AutomaticNumberingText
+
+	updated, err := Apply(context.Background(), snapshot, layout)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, updated, "block-0016")
+	if strings.Contains(block.XML, "<w:numPr>") {
+		t.Fatalf("block xml = %s, want automatic numbering removed", block.XML)
+	}
+	if strings.Contains(block.XML, "<w:pStyle") {
+		t.Fatalf("block xml = %s, want paragraph style removed", block.XML)
+	}
+	if strings.Contains(block.XML, "<w:ind") {
+		t.Fatalf("block xml = %s, want paragraph indentation removed", block.XML)
+	}
+	if block.Text != "1.2 编号段落" {
+		t.Fatalf("block text = %q, want automatic numbering materialized", block.Text)
+	}
+	if block.DisplayText != block.Text {
+		t.Fatalf("display text = %q, want %q", block.DisplayText, block.Text)
+	}
+}
+
+func TestApplyAutomaticNumberingTextKeepsManualNumberingEditsAuthoritative(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.AutomaticNumbering = AutomaticNumberingText
+	layout.Edits = []Edit{
+		{
+			BlockID: "block-0016",
+			ManualNumbering: &ManualNumberingEdit{
+				Text:  "手写 编号段落",
+				Style: ManualNumberingStylePlain,
+			},
+		},
+	}
+
+	updated, err := Apply(context.Background(), snapshot, layout)
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, updated, "block-0016")
+	if block.Text != "手写 编号段落" {
+		t.Fatalf("block text = %q, want manual numbering edit text", block.Text)
+	}
+}
+
+func TestApplyRejectsUnknownAutomaticNumberingPolicy(t *testing.T) {
+	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+	layout := completeLayoutFromSnapshot(snapshot)
+	layout.AutomaticNumbering = AutomaticNumberingPolicy("surprise")
+
+	if _, err := Apply(context.Background(), snapshot, layout); err == nil || !strings.Contains(err.Error(), "unknown automatic numbering policy") {
+		t.Fatalf("Apply error = %v, want unknown automatic numbering policy error", err)
+	}
+}
+
 func TestApplyManualNumberingEditRebuildsNumberedParagraph(t *testing.T) {
 	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
