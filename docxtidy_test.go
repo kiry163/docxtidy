@@ -240,7 +240,7 @@ func TestApplyAutomaticNumberingTextMaterializesNumberedParagraphs(t *testing.T)
 	}
 }
 
-func TestApplyAutomaticNumberingTextNormalizesNumberingSeparator(t *testing.T) {
+func TestApplyAutomaticNumberingTextSkipsBlockWhenPrefixCannotBeDerived(t *testing.T) {
 	snapshot, err := Extract(context.Background(), bytes.NewReader(sampleDocx(t)))
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
@@ -249,9 +249,7 @@ func TestApplyAutomaticNumberingTextNormalizesNumberingSeparator(t *testing.T) {
 		if block.ID != "block-0016" {
 			continue
 		}
-		block.Text = " 编号段落"
-		block.DisplayText = "1.2  编号段落"
-		block.XML = strings.Replace(block.XML, ">编号段落<", "> 编号段落<", 1)
+		block.DisplayText = "展示层文本与正文不匹配"
 		snapshot.Document.Blocks[i] = block
 		break
 	}
@@ -264,8 +262,11 @@ func TestApplyAutomaticNumberingTextNormalizesNumberingSeparator(t *testing.T) {
 	}
 
 	block := blockByIDForTest(t, updated, "block-0016")
-	if block.Text != "1.2编号段落" {
-		t.Fatalf("block text = %q, want no inserted separator", block.Text)
+	if block.Text != "编号段落" {
+		t.Fatalf("block text = %q, want unchanged original text", block.Text)
+	}
+	if !strings.Contains(block.XML, "<w:numPr>") {
+		t.Fatalf("block xml = %s, want block skipped when prefix cannot be derived", block.XML)
 	}
 }
 

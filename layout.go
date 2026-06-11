@@ -213,7 +213,7 @@ func materializeAutomaticNumbering(blockByID map[string]SnapshotBlock) error {
 		}
 		prefix, ok := automaticNumberingPrefix(block)
 		if !ok {
-			return fmt.Errorf("cannot materialize automatic numbering for block %s", blockID)
+			continue
 		}
 		updatedXML, err := ooxml.MaterializeAutomaticNumberingParagraphXML(block.XML, prefix)
 		if err != nil {
