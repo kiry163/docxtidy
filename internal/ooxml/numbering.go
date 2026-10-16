@@ -9,6 +9,10 @@ import (
 	"unicode"
 )
 
+// numberingLevelCount 是 ECMA-376 定义的编号层级数量：ilvl 取值 0..8。
+// ilvl 超出该范围（例如 WPS 用 ilvl="255" 清除继承编号）或 numId="0" 都表示该段落没有自动编号。
+const numberingLevelCount = 9
+
 type numberingDefinitions struct {
 	numToAbstract map[string]string
 	levels        map[string]map[int]string
@@ -100,8 +104,8 @@ func (s *numberingState) numberingInfoForBlock(blockXML string) *NumberingInfo {
 	}
 
 	counters := s.counters[numID]
-	if len(counters) < 9 {
-		counters = make([]int, 9)
+	if len(counters) < numberingLevelCount {
+		counters = make([]int, numberingLevelCount)
 	}
 	for i := 0; i < level; i++ {
 		if counters[i] == 0 {
@@ -187,7 +191,7 @@ func paragraphNumbering(blockXML string) (string, int, bool) {
 			}
 		}
 	}
-	return numID, level, numID != "" && level >= 0
+	return numID, level, numID != "" && numID != "0" && level >= 0 && level < numberingLevelCount
 }
 
 func computeNumberingLabel(levelText string, counters []int) string {

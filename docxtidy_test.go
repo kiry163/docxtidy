@@ -418,6 +418,61 @@ func TestExtractUsesNumberingLevelStartValues(t *testing.T) {
 	}
 }
 
+func TestExtractIgnoresWPSNumberingClearingSentinel(t *testing.T) {
+	documentXML := `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:body>` + numberedParagraphXML("清除编号", "0", 255) + `</w:body></w:document>`
+
+	snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentXML(t, documentXML)))
+	if err != nil {
+		t.Fatalf("Extract returned error: %v", err)
+	}
+
+	block := blockByIDForTest(t, snapshot, "block-0001")
+	if block.DisplayText != "清除编号" {
+		t.Fatalf("display text = %q, want text without numbering prefix", block.DisplayText)
+	}
+}
+
+func TestExtractIgnoresNumberingLevelOutsideDefinedRange(t *testing.T) {
+	numberingXML := `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+		`<w:abstractNum w:abstractNumId="1">` +
+		`<w:lvl w:ilvl="8"><w:start w:val="3"/><w:lvlText w:val="%9"/></w:lvl>` +
+		`</w:abstractNum>` +
+		`<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>` +
+		`</w:numbering>`
+
+	cases := []struct {
+		name        string
+		numID       string
+		level       int
+		wantDisplay string
+	}{
+		{name: "last defined level", numID: "2", level: 8, wantDisplay: "3末级段落"},
+		{name: "level beyond defined range", numID: "2", level: 9, wantDisplay: "末级段落"},
+		{name: "numId zero disables numbering", numID: "0", level: 0, wantDisplay: "末级段落"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			documentXML := `<?xml version="1.0" encoding="UTF-8"?>` +
+				`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+				`<w:body>` + numberedParagraphXML("末级段落", testCase.numID, testCase.level) + `</w:body></w:document>`
+
+			snapshot, err := Extract(context.Background(), bytes.NewReader(docxWithDocumentAndNumberingXML(t, documentXML, numberingXML)))
+			if err != nil {
+				t.Fatalf("Extract returned error: %v", err)
+			}
+
+			block := blockByIDForTest(t, snapshot, "block-0001")
+			if block.DisplayText != testCase.wantDisplay {
+				t.Fatalf("display text = %q, want %q", block.DisplayText, testCase.wantDisplay)
+			}
+		})
+	}
+}
+
 func TestBodyBlocksDisplayTextUsesImagePlaceholder(t *testing.T) {
 	documentXML := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
